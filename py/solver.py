@@ -1,5 +1,5 @@
-from py.cupy_methods import *
-from py.numba_methods import *
+from cupy_methods import *
+from numba_methods import *
 from argparse import ArgumentParser
 from queue import Empty
 import multiprocessing as mp
