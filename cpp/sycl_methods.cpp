@@ -4,6 +4,7 @@
 #include <cmath>
 #include <string>
 #include <sycl/sycl.hpp>
+#include "sycl_methods.hpp"
 
 int gpu_selector(sycl::queue q) {
     // GPU device selection
@@ -13,6 +14,8 @@ int gpu_selector(sycl::queue q) {
             throw std::runtime_error("No GPU device available");
 
         std::cout << "Running on " << q.get_device().get_info<sycl::info::device::name>() << std::endl;
+
+        return 0;
     } catch (std::exception &e) {
         std::cerr << "Exception: " << e.what() << std::endl;
         return 1;
