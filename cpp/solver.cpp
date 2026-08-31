@@ -8,24 +8,38 @@
 #include <chrono>
 #include <CLI11.hpp>
 #include <nvml.h>
+#include "sycl_methods.hpp"
 
 #define MONITOR_INTERVAL_MILIS 200
 
+//? Treba li dodati USM/buffer opciju? kao dodatan validation?
 struct ParsedArgs {
     int grid_size = 0;
-    std::string framework;
     std::string workload;
 };
 
 struct Summary {
-    unsigned int    gpu_max     = 0;
-    double          gpu_avg     = 0.0;
+    unsigned int    gpu_max         = 0;
+    double          gpu_avg         = 0.0;
     unsigned int    mem_util_max    = 0;
     double          mem_util_avg    = 0.0;
-    double          power_max   = 0.0;
-    double          power_avg   = 0.0;
-    int             n_samples   = 0;
+    double          power_max       = 0.0;
+    double          power_avg       = 0.0;
+    int             n_samples       = 0;
 };
+
+std::ostream& operator<<(std::ostream& os, const Summary& summary) {
+    os << "* GPU Summary:\n"
+       << "  - Max GPU Utilizaiton:           " << summary.gpu_max << " %\n"
+       << "  - Average GPU Utilization:       " << summary.gpu_avg << " %\n"
+       << "  - Max Memory Utilization:        " << summary.mem_util_max << " %\n"
+       << "  - Average Memory Utilization:    " << summary.mem_util_avg << " %\n"
+       << "  - Max Power Consumption:         " << summary.power_max << " W\n"
+       << "  - Average Power Consumption:     " << summary.power_avg << " W\n"
+       << "  - Number of samples:             " << summary.n_samples << '\n';
+
+    return os;
+}
 
 struct GpuSample {
     unsigned int gpu_util;
@@ -72,7 +86,7 @@ public:
         thread_ = std::thread(&GpuMonitor::run, this);
     }
 
-    bool wait_ready(std::chrono::milliseconds timeout) const {
+    bool wait_ready(std::chrono::milliseconds timeout = std::chrono::milliseconds(5000)) const {
         auto start = std::chrono::steady_clock::now();
 
         while (!ready_flag_.load()) {
@@ -165,10 +179,6 @@ ParsedArgs parse_args(int argc, char** argv) {
     app.add_option("--grid-size", args.grid_size, "Number of grid points along each spatial dimension.")
         ->required();
 
-    app.add_option("--framework", args.framework, "Computational framework to use.")
-        ->required()
-        ->check(CLI::IsMember({"cupy", "numba"}));
-
     app.add_option("--workload", args.workload,
                     "Numerical method to calculate: "
                     "Monte Carlo, Conjugate Gradient, Direct Coulomb Simulation, "
@@ -188,11 +198,18 @@ ParsedArgs parse_args(int argc, char** argv) {
 int main(int argc, char** argv) {
     ParsedArgs args = parse_args(argc, argv);
 
-    std::printf("Framework:      %s\n", args.framework);
-    std::printf("Workload:       %s\n", args.workload);
-    std::printf("Grid size:     [%d, %d]\n", args.grid_size, args.grid_size);
+    std::printf("Workload:       %s\n", args.workload.c_str());
+    std::printf("Grid size:     [%d, %d]\n\n", args.grid_size, args.grid_size);
 
-    //TODO
+    GpuMonitor monitor;
+    monitor.start();
+    monitor.wait_ready();
+
+    //TODO: do work
+
+    monitor.stop();
+    Summary s = monitor.summary();
+    std::cout << s << std::endl;
 
     return 0;
 }
