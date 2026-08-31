@@ -3,6 +3,8 @@ import cupy as cp
 import numpy as np
 import time
 
+MAX_NNZ = 4_000_000_000    # 32GB
+
 def cupy_monte_carlo(args):
     """
     Monte Carlo integration of the Gaussian integral.
@@ -91,43 +93,45 @@ def cupy_spectral(args):
     filename = filename_dir / f"cupy_spectral_{args.grid_size}.csv"
     np.savetxt(filename, u_cpu, delimiter=",")
 
-def cupy_spmv(args):
+#TODO: dodaj optional argument za spmv
+def cupy_spmv(args, kernel_start_event):
     """
     Calculates the sparse matrix vector multiplication y = Ax.
+    The kernel utilizes power iteration to increase its duration.
     """
     import cupyx.scipy.sparse as csp
-    from scipy.sparse import random
 
-    def kernel(A_csr, x):
-        y = A_csr @ x
-        return y
+    def kernel(A_csr, x, iterations=200):
+        for _ in range(iterations):
+            x = A_csr @ x
+            x = x / cp.linalg.norm(x)
+        cp.cuda.Stream.null.synchronize()
+        return x
 
-    rng = np.random.default_rng(seed=42)
-    N = 100_000
-    density = 0.001
+    N = 300_000
+    density = 0.01
+    nnz = int(N * N * density)
+    if nnz > MAX_NNZ:
+        raise ValueError(
+            f"Requested matrix would contain {nnz:,} nonzeros.\n"
+            f"Maximum allowed is {MAX_NNZ:,}."
+        )
 
-    A_host = random(N, N, density=density, format='csr', rng=rng, dtype=cp.float32)
-    A_gpu = csp.csr_matrix(A_host)
+    cp.random.seed(42)
+    rows = cp.random.randint(0, N, size=nnz, dtype=cp.int32)
+    cols = cp.random.randint(0, N, size=nnz, dtype=cp.int32)
+    vals = cp.random.rand(nnz, dtype=cp.float32)
+
+    A_gpu = csp.coo_matrix((vals, (rows, cols)), shape=(N, N)).tocsr()
     x_gpu = cp.random.rand(N, dtype=cp.float32)
+    cp.cuda.Stream.null.synchronize()
 
+    kernel_start_event.set()
+    t0 = time.perf_counter()
     y_gpu = kernel(A_gpu, x_gpu)
-    y_cpu = cp.asnumpy(y_gpu)
-    
-    filename_dir = Path(f"results")
-    filename_dir.mkdir(exist_ok=True)
-    filename = filename_dir / f"cupy_spmv_XYZ.csv" #!change
-    np.savetxt(filename, y_cpu, delimiter=",")
+    t1 = time.perf_counter()
 
-    ### DEBUG ###
-    # A = cp.random.random((4096, 4096), dtype=cp.float32)
-    # B = cp.random.random((4096, 4096), dtype=cp.float32)
-
-    # for _ in range(10):
-    #     C = A @ B
-    #     cp.cuda.Stream.null.synchronize()
-    ### END ###
-
-    return "done"
+    return t1-t0
 
 def cupy_stencil(args):
     """
