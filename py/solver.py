@@ -1,12 +1,10 @@
-from cupy_methods import *
-from numba_methods import *
 from argparse import ArgumentParser
 from queue import Empty
 import multiprocessing as mp
 import pynvml
 import time
 
-MONITOR_INTERVAL = 0.2
+MONITOR_INTERVAL = 0.01
 
 FRAMEWORKS = {
     "cupy": "CuPy",
@@ -20,25 +18,6 @@ NUM_METHOD = {
     "spectral": "Spectral",
     "spmv": "Sparse Matrix-Vector Multiplication",
     "stencil": "Stencil",
-}
-
-WORKLOADS = {
-    "cupy": {
-        "mc": cupy_monte_carlo,
-        "cg": cupy_conjugate_gradient,
-        "dcs": cupy_dcs,
-        "spectral": cupy_spectral,
-        "spmv": cupy_spmv,
-        "stencil": cupy_stencil,
-    },
-    "numba": {
-        "mc": numba_monte_carlo,
-        "cg": numba_conjugate_gradient,
-        "dcs": numba_dcs,
-        "spectral": numba_spectral,
-        "spmv": numba_spmv,
-        "stencil": numba_stencil,
-    },
 }
 
 def parse_args():
@@ -71,7 +50,7 @@ def parse_args():
 
     return parser.parse_args()
 
-def monitor(queue, stop_event, ready_event):
+def monitor(queue, stop_event, ready_event, kernel_start_event):
     pynvml.nvmlInit()
     handle = pynvml.nvmlDeviceGetHandleByIndex(0)
 
@@ -88,6 +67,14 @@ def monitor(queue, stop_event, ready_event):
     # Warm-up run
     _ = pynvml.nvmlDeviceGetUtilizationRates(handle)
     ready_event.set()
+
+    # Wait for kernel to start, then start monitoring
+    while not kernel_start_event.is_set():
+        if stop_event.is_set():
+            pynvml.nvmlShutdown()
+            return
+
+        kernel_start_event.wait(timeout=0.1)
 
     try:
         while not stop_event.is_set():
@@ -121,18 +108,57 @@ def monitor(queue, stop_event, ready_event):
             })
         pynvml.nvmlShutdown()
 
-def workload(queue, args):
-    implementation = WORKLOADS[args.framework][args.workload]
+def workload(queue, args, kernel_start_event):
+    if args.framework == "cupy":
+        from cupy_methods import (
+            cupy_monte_carlo, cupy_conjugate_gradient, cupy_dcs,
+            cupy_spectral, cupy_spmv, cupy_stencil
+        )
+        workload_map = {
+            "mc": cupy_monte_carlo,
+            "cg": cupy_conjugate_gradient,
+            "dcs": cupy_dcs,
+            "spectral": cupy_spectral,
+            "spmv": cupy_spmv,
+            "stencil": cupy_stencil,
+        }
+    else:
+        from numba_methods import (
+            numba_monte_carlo, numba_conjugate_gradient, numba_dcs,
+            numba_spectral, numba_spmv, numba_stencil
+        )
+        workload_map = {
+            "mc": numba_monte_carlo,
+            "cg": numba_conjugate_gradient,
+            "dcs": numba_dcs,
+            "spectral": numba_spectral,
+            "spmv": numba_spmv,
+            "stencil": numba_stencil,
+        }
 
-    t0 = time.perf_counter()
-    status = implementation(args)
-    elapsed = time.perf_counter() - t0
+    implementation = workload_map[args.workload]
+    runtime = implementation(args, kernel_start_event)
 
     queue.put({
         "type": "workload",
-        "status": status,
-        "elapsed": elapsed
+        "runtime": runtime
     })
+
+def print_workload(message):
+    print("\r" + " " * 100 + "\r", end="")
+    print("\nGPU Summary:")
+    print(f"  - Runtime:    {message['runtime']:2.3} s\n")
+
+def print_summary(message):
+    print()
+    print(f"Max GPU: {message['gpu_max']:.2f} %")
+    print(f"Avg GPU: {message['gpu_avg']:.2f} %")
+    print(f"Max Mem: {message['mem_util_max']:.2f} %")
+    print(f"Avg Mem: {message['mem_util_avg']:.2f} %")
+    print(f"Max Pow: {message['power_max']:.2f} W")
+    print(f"Avg Pow: {message['power_avg']:.2f} W")
+    print(f"Samples: {message['num_samples']}")
+
 
 if __name__ == "__main__":
     args = parse_args()
@@ -145,13 +171,13 @@ if __name__ == "__main__":
     queue = mp.Queue()
     stop_event = mp.Event()
     ready_event = mp.Event()
+    kernel_start_event = mp.Event()
 
-    monitor_process = mp.Process(target=monitor, args=(queue, stop_event, ready_event))
+    monitor_process = mp.Process(target=monitor, args=(queue, stop_event, ready_event, kernel_start_event))
+    workload_process = mp.Process(target=workload, args=(queue, args, kernel_start_event))
+
     monitor_process.start()
-
-    ready_event.wait(timeout=5)
-
-    workload_process = mp.Process(target=workload, args=(queue, args, ))
+    ready_event.wait()
     workload_process.start()
 
     gpu = 0
@@ -159,18 +185,16 @@ if __name__ == "__main__":
     mem_total = 0
 
     while workload_process.is_alive():
-
         try:
             message = queue.get(timeout=0.1)
         except Empty:
             message = None
 
         while message is not None:
-
             if message["type"] == "gpu_stats":
                 print(
-                    "GPU name:       " + message["name"] + "\n" +
-                    "Driver version: " + message["driver"]
+                    f"GPU name:       {message['name']}\n"
+                    f"Driver version: {message['driver']}"
                 )
 
             if message["type"] == "gpu":
@@ -191,9 +215,7 @@ if __name__ == "__main__":
                 )
 
             elif message["type"] == "workload":
-                print("\r" + " " * 100 + "\r", end="")
-                print(f"Status:  {message['status']}")
-                print(f"Runtime: {message['elapsed']:.3f} s")
+                print_workload(message)
 
             try:
                 message = queue.get_nowait()
@@ -207,9 +229,7 @@ if __name__ == "__main__":
             break
 
         if message["type"] == "workload":
-            print("\r" + " " * 100 + "\r", end="")
-            print(f"Status:  {message['status']}")
-            print(f"Runtime: {message['elapsed']:.3f} s")
+            print_workload(message)
 
     stop_event.set()
 
@@ -223,7 +243,6 @@ if __name__ == "__main__":
             break
 
         if message["type"] == "gpu_summary":
-            print(f"Max GPU: {message['gpu_max']:.2f}%")
-            print(f"Avg GPU: {message['gpu_avg']:.2f}%")
+            print_summary(message)
 
     print()
