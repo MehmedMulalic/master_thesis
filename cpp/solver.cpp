@@ -1,21 +1,31 @@
 #include <iostream>
 #include <numeric>
+#include <functional>
+#include <unordered_map>
+#include <unordered_set>
 #include <queue>
 #include <mutex>
 #include <condition_variable> 
 #include <atomic>
 #include <thread>
 #include <chrono>
+#include <string>
 #include <CLI11.hpp>
 #include <nvml.h>
 #include "sycl_methods.hpp"
+#include "ParsedArgs.hpp"
 
 #define MONITOR_INTERVAL_MILIS 200
 
-//? Treba li dodati USM/buffer opciju? kao dodatan validation?
-struct ParsedArgs {
-    int grid_size = 0;
-    std::string workload;
+using WorkloadFn = std::function<double(const ParsedArgs&)>;
+
+static const std::unordered_map<std::string, WorkloadFn> workload_map = {
+    {"mc",              sycl_monte_carlo},
+    {"cg",              sycl_conjugate_gradient},
+    {"dcs",             sycl_dcs},
+    {"spectral",        sycl_spectral},
+    {"spmv",            sycl_spmv},
+    {"stencil",         sycl_stencil},
 };
 
 struct Summary {
@@ -195,6 +205,27 @@ ParsedArgs parse_args(int argc, char** argv) {
     return args;
 }
 
+bool verify_injective_indexing(size_t X, size_t Y, size_t Z, 
+                                std::function<size_t(size_t,size_t,size_t)> index_fn,
+                                size_t max_valid_index) {
+    std::unordered_set<size_t> seen;
+    for (size_t x = 0; x < X; ++x)
+        for (size_t y = 0; y < Y; ++y)
+            for (size_t z = 0; z < Z; ++z) {
+                size_t idx = index_fn(x, y, z);
+
+                if (idx >= max_valid_index) {
+                    printf("OUT OF BOUNDS: (%d,%d,%d) -> %zu\n", x, y, z, idx);
+                    return false;
+                }
+                if (!seen.insert(idx).second) {
+                    printf("COLLISION AT (%d,%d,%d) -> %zu\n", x, y, z, idx);
+                    return false;
+                }
+            }
+    return seen.size() == X * Y * Z;
+}
+
 int main(int argc, char** argv) {
     ParsedArgs args = parse_args(argc, argv);
 
@@ -205,7 +236,13 @@ int main(int argc, char** argv) {
     monitor.start();
     monitor.wait_ready();
 
-    //TODO: do work
+    auto workload = workload_map.find(args.workload);
+    if (workload == workload_map.end()) {
+        std::cerr << "Unknown workload: " << args.workload << std::endl;
+        return 1;
+    }
+
+    auto output = workload->second(args);
 
     monitor.stop();
     Summary s = monitor.summary();
