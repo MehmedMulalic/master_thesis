@@ -10,17 +10,25 @@ done
 # Install Python libraries
 pip install -r py/requirements.txt
 
-# Install Spack
+# Install Spack 1.2
 cd ~/.local
 git clone --depth=2 --branch=releases/v1.2 https://github.com/spack/spack.git
 echo "source ~/spack/share/spack/setup-env.sh" >> ~/.bashrc
-# spack external find cuda
-# spack compiler find
-# spack compilers
-# spack install hipsycl +cuda ^llvm
-# spack load hipsycl
-# spack install hipsycl +cuda
-# spack add hipsycl +cuda
+
+spack env create sycl
+spack env activate sycl
+
+spack add gcc@11.4.0
+spack add gcc@12.3.0
+spack add llvm@18.1.8 +cuda targets=x86,nvptx,amdgpu ~lldb
+spack add cuda@12.8.0
+spack add hipsycl@24.10.0
+
+spack concretize
+spack install -j$(nproc)
+
+spack compiler find $(spack location -i gcc@11.4.0)
+spack compiler find $(spack location -i gcc@12.3.0)
 
 # Install Julia 1.12.7
 cd ~/.local
