@@ -5,7 +5,7 @@
 #include <cmath>
 #include <string>
 #include <sycl/sycl.hpp>
-#include "sycl_methods.hpp"
+#include "SyclMethods.hpp"
 
 int sycl_monte_carlo(const ParsedArgs& args) {
     // sycl::queue q{

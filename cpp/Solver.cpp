@@ -12,7 +12,7 @@
 #include <string>
 #include <CLI11.hpp>
 #include <nvml.h>
-#include "sycl_methods.hpp"
+#include "SyclMethods.hpp"
 #include "ParsedArgs.hpp"
 
 #define MONITOR_INTERVAL_MILIS 200
