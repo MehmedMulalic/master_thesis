@@ -19,13 +19,22 @@
 
 using WorkloadFn = std::function<double(const ParsedArgs&)>;
 
-static const std::unordered_map<std::string, WorkloadFn> workload_map = {
+static const std::unordered_map<std::string, WorkloadFn> workload_func_map = {
     {"mc",              sycl_monte_carlo},
     {"cg",              sycl_conjugate_gradient},
     {"dcs",             sycl_dcs},
     {"spectral",        sycl_spectral},
     {"spmv",            sycl_spmv},
     {"stencil",         sycl_stencil},
+};
+
+static const std::unordered_map<std::string, std::string> workload_map = {
+    {"mc", "Monte Carlo"},
+    {"cg", "Conjugate Gradient"},
+    {"dcs", "Direct Coulomb Summation"},
+    {"spectral", "Spectral"},
+    {"spmv", "Sparse Matrix-Vector Multiplication"},
+    {"stencil", "Stencil"}
 };
 
 struct Summary {
@@ -215,11 +224,11 @@ bool verify_injective_indexing(size_t X, size_t Y, size_t Z,
                 size_t idx = index_fn(x, y, z);
 
                 if (idx >= max_valid_index) {
-                    printf("OUT OF BOUNDS: (%d,%d,%d) -> %zu\n", x, y, z, idx);
+                    printf("OUT OF BOUNDS: (%zu, %zu, %zu) -> %zu\n", x, y, z, idx);
                     return false;
                 }
                 if (!seen.insert(idx).second) {
-                    printf("COLLISION AT (%d,%d,%d) -> %zu\n", x, y, z, idx);
+                    printf("COLLISION AT (%zu, %zu, %zu) -> %zu\n", x, y, z, idx);
                     return false;
                 }
             }
@@ -229,15 +238,15 @@ bool verify_injective_indexing(size_t X, size_t Y, size_t Z,
 int main(int argc, char** argv) {
     ParsedArgs args = parse_args(argc, argv);
 
-    std::printf("Workload:       %s\n", args.workload.c_str());
-    std::printf("Grid size:     [%d, %d]\n\n", args.grid_size, args.grid_size);
+    std::printf("Workload:       %s\n", workload_map.at(args.workload).c_str());
+    std::printf("Grid size:     [%d, %d, %d]\n\n", args.grid_size, args.grid_size, args.grid_size);
 
     GpuMonitor monitor;
     monitor.start();
     monitor.wait_ready();
 
-    auto workload = workload_map.find(args.workload);
-    if (workload == workload_map.end()) {
+    auto workload = workload_func_map.find(args.workload);
+    if (workload == workload_func_map.end()) {
         std::cerr << "Unknown workload: " << args.workload << std::endl;
         return 1;
     }
