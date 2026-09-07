@@ -49,6 +49,12 @@ def parse_args():
     )
 
     parser.add_argument(
+        "--validate",
+        action="store_true",
+        help="Run a CPU reference calculation and compare the result.",
+    )
+
+    parser.add_argument(
         "--N",
         type=int,
         help="Problem size N.",
@@ -170,6 +176,16 @@ def workload(queue, args, kernel_start_event):
     implementation = workload_map[args.workload]
     runtime, result = implementation(args, kernel_start_event)
 
+    if args.validate:
+        from numpy_methods import numpy_theoretical_monte_carlo
+        expected = numpy_theoretical_monte_carlo(args.d)
+
+        queue.put({
+            "type": "validate",
+            "cpu_result": expected,
+            "gpu_result": result,
+        })
+
     queue.put({
         "type": "workload",
         "runtime_ms": runtime
@@ -179,6 +195,33 @@ def print_workload_(message):
     print("\r" + " " * 100 + "\r", end="")
     print("\nGPU Summary:")
     print(f"  - Runtime:    {message['runtime_ms']:2.4f} ms\n")
+
+def print_gpu_(message):
+    gpu = message["gpu"]
+    mem_used = message["mem_used"]
+    mem_total = message["mem_total"]
+
+    mem_used_gb = mem_used / (1024 ** 3)
+    mem_total_gb = mem_total / (1024 ** 3)
+    mem_percent = mem_used / mem_total * 100
+
+    print(
+        f"\rGPU: {gpu:3.1f}% | "
+        f"VRAM: {mem_used_gb:.2f}/{mem_total_gb:.2f} GB "
+        f"({mem_percent:.1f}%)",
+        end="",
+        flush=True
+    )
+
+def print_validate_(message):
+    cpu_result = message['cpu_result']
+    gpu_result = message['gpu_result']
+    difference = abs(cpu_result - gpu_result)
+    
+    print("\n\nResult Validity:")
+    print(f" - CPU result: {cpu_result:2.3f}")
+    print(f" - GPU result: {gpu_result:2.3f}")
+    print(f" - Difference: {difference:2.3f}")
 
 
 if __name__ == "__main__":
@@ -217,23 +260,12 @@ if __name__ == "__main__":
                     f"GPU name:       {message['name']}\n"
                     f"Driver version: {message['driver']}"
                 )
+            
+            elif message["type"] == "validate":
+                print_validate_(message)
 
-            if message["type"] == "gpu":
-                gpu = message["gpu"]
-                mem_used = message["mem_used"]
-                mem_total = message["mem_total"]
-
-                mem_used_gb = mem_used / (1024 ** 3)
-                mem_total_gb = mem_total / (1024 ** 3)
-                mem_percent = mem_used / mem_total * 100
-    
-                print(
-                    f"\rGPU: {gpu:3.1f}% | "
-                    f"VRAM: {mem_used_gb:.2f}/{mem_total_gb:.2f} GB "
-                    f"({mem_percent:.1f}%)",
-                    end="",
-                    flush=True
-                )
+            elif message["type"] == "gpu":
+                print_gpu_(message)
 
             elif message["type"] == "workload":
                 print_workload_(message)
@@ -243,6 +275,7 @@ if __name__ == "__main__":
             except Empty:
                 message = None
 
+    # Fetch last message
     while True:
         try:
             message = queue.get_nowait()
@@ -257,6 +290,7 @@ if __name__ == "__main__":
     workload_process.join()
     monitor_process.join()
 
+    # Fetch summary
     while True:
         try:
             message = queue.get_nowait()
