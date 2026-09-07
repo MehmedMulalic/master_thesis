@@ -3,22 +3,46 @@ import cupy as cp
 import numpy as np
 import time
 
-MAX_NNZ = 4_000_000_000    # 32GB
+MAX_NNZ = 4_000_000_000    # 32GB VRAM
 
-def cupy_monte_carlo(args):
+#TODO: fix function arguments
+
+#! ################
+# cupy_spmv je zapoceo uspostavljanje da funkcija ima timer
+# pa da return-a vrijeme dok se event pass-a kao argument
+# da zapocne monitoring. To treba uraditi na svim funkcijama.
+#! ################
+
+def cupy_monte_carlo(args, kernel_start_event):
     """
     Monte Carlo integration of the Gaussian integral.
     The theoretical value should converge to pi^(d/2) as N and d approach infinity.
+
+    1. Draw samples
+    2. Normalization
+    3. Evaluate f(x_i)
+    4. MC estimator
     """
-    def kernel(d, N, bound=6.0):
-        X = cp.random.uniform(-bound, bound, size=(N, d), dtype=cp.float32)
-        f_vals = cp.exp(-cp.sum(X**2, axis=1))
-        volume = (2 * bound) ** d
+    start = cp.cuda.Event()
+    end = cp.cuda.Event()
+    cp.random.seed(42)
 
-        I_estimate = volume * cp.mean(f_vals)
-        return I_estimate
+    kernel_start_event.set()
+    start.record()
 
-    
+    X = cp.random.uniform(-args.bound, args.bound, size=(args.N, args.d), dtype=cp.float32)
+    sq_norms = cp.sum(X**2, axis=1)
+    f_vals = cp.exp(-sq_norms)
+
+    volume = (2 * args.bound) ** args.d
+    I_estimate = volume * cp.mean(f_vals)
+
+    end.record()
+    end.synchronize()
+
+    elapsed = cp.cuda.get_elapsed_time(start, end)
+
+    return elapsed, I_estimate
 
 def cupy_conjugate_gradient(args):
     """
