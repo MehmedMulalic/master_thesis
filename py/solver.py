@@ -22,7 +22,7 @@ NUM_METHOD = {
 
 def parse_args():
     parser = ArgumentParser(
-        description="Run the 3D heat equation benchmark."
+        description="Run the 3D heat equation benchmark.",
     )
 
     parser.add_argument(
@@ -45,10 +45,38 @@ def parse_args():
         required=True,
         help="Numerical method to calculate: " \
             "Monte Carlo, Conjugate Gradient, Direct Coulomb Simulation, " \
-            "Spectral, Sparse Matrix Vector, Stencil."
+            "Spectral, Sparse Matrix Vector, Stencil.",
     )
 
-    return parser.parse_args()
+    parser.add_argument(
+        "--N",
+        type=int,
+        help="Problem size N.",
+    )
+
+    parser.add_argument(
+        "--d",
+        type=int,
+        help="Dimension d.",
+    )
+
+    parser.add_argument(
+        "--bound",
+        type=float,
+        default=6.0,
+        help="Domain bound used for volume for Monte Carlo. Default value is 6.0, " \
+            "accurate enough for double-point floating values.",
+    )
+
+    args = parser.parse_args()
+
+    if args.workload == "mc":
+        if args.N is None or args.d is None or args.bound is None:
+            parser.error("--workload mc requires --N, --d, and --bound")
+
+    # elif args.workload == "spmv":
+
+    return args
 
 def monitor(queue, stop_event, ready_event, kernel_start_event):
     pynvml.nvmlInit()
@@ -76,6 +104,7 @@ def monitor(queue, stop_event, ready_event, kernel_start_event):
 
         kernel_start_event.wait(timeout=0.1)
 
+    # Gather information
     try:
         while not stop_event.is_set():
             util     = pynvml.nvmlDeviceGetUtilizationRates(handle)
@@ -114,6 +143,7 @@ def workload(queue, args, kernel_start_event):
             cupy_monte_carlo, cupy_conjugate_gradient, cupy_dcs,
             cupy_spectral, cupy_spmv, cupy_stencil
         )
+
         workload_map = {
             "mc": cupy_monte_carlo,
             "cg": cupy_conjugate_gradient,
@@ -127,6 +157,7 @@ def workload(queue, args, kernel_start_event):
             numba_monte_carlo, numba_conjugate_gradient, numba_dcs,
             numba_spectral, numba_spmv, numba_stencil
         )
+
         workload_map = {
             "mc": numba_monte_carlo,
             "cg": numba_conjugate_gradient,
@@ -137,27 +168,17 @@ def workload(queue, args, kernel_start_event):
         }
 
     implementation = workload_map[args.workload]
-    runtime = implementation(args, kernel_start_event)
+    runtime, result = implementation(args, kernel_start_event)
 
     queue.put({
         "type": "workload",
-        "runtime": runtime
+        "runtime_ms": runtime
     })
 
-def print_workload(message):
+def print_workload_(message):
     print("\r" + " " * 100 + "\r", end="")
     print("\nGPU Summary:")
-    print(f"  - Runtime:    {message['runtime']:2.3} s\n")
-
-def print_summary(message):
-    print()
-    print(f"Max GPU: {message['gpu_max']:.2f} %")
-    print(f"Avg GPU: {message['gpu_avg']:.2f} %")
-    print(f"Max Mem: {message['mem_util_max']:.2f} %")
-    print(f"Avg Mem: {message['mem_util_avg']:.2f} %")
-    print(f"Max Pow: {message['power_max']:.2f} W")
-    print(f"Avg Pow: {message['power_avg']:.2f} W")
-    print(f"Samples: {message['num_samples']}")
+    print(f"  - Runtime:    {message['runtime_ms']:2.4f} ms\n")
 
 
 if __name__ == "__main__":
@@ -215,7 +236,7 @@ if __name__ == "__main__":
                 )
 
             elif message["type"] == "workload":
-                print_workload(message)
+                print_workload_(message)
 
             try:
                 message = queue.get_nowait()
@@ -229,7 +250,7 @@ if __name__ == "__main__":
             break
 
         if message["type"] == "workload":
-            print_workload(message)
+            print_workload_(message)
 
     stop_event.set()
 
@@ -243,6 +264,13 @@ if __name__ == "__main__":
             break
 
         if message["type"] == "gpu_summary":
-            print_summary(message)
+            print()
+            print(f"Avg GPU Utilization:    {message['gpu_avg']:.2f} %")
+            print(f"Max GPU Utilization:    {message['gpu_max']:.2f} %")
+            print(f"Max Memory Utilization: {message['mem_util_max']:.2f} %")
+            print(f"Avg Memory Utilization: {message['mem_util_avg']:.2f} %")
+            print(f"Max Power:              {message['power_max']:.2f} W")
+            print(f"Avg Power:              {message['power_avg']:.2f} W")
+            print(f"Samples:                {message['num_samples']}")
 
     print()
