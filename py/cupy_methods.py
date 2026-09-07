@@ -5,18 +5,15 @@ import time
 
 MAX_NNZ = 4_000_000_000    # 32GB VRAM
 
-#TODO: fix function arguments
-
 #! ################
-# cupy_spmv je zapoceo uspostavljanje da funkcija ima timer
-# pa da return-a vrijeme dok se event pass-a kao argument
-# da zapocne monitoring. To treba uraditi na svim funkcijama.
+# da li je potrebno warm-up kernel uraditi na svakom kernel-u? vjerujem da treba
+# tako da treba u monte carlo ubaciti warm up kernel
 #! ################
 
 def cupy_monte_carlo(args, kernel_start_event):
     """
     Monte Carlo integration of the Gaussian integral.
-    The theoretical value should converge to pi^(d/2) as N and d approach infinity.
+    The theoretical value should converge to pi ** (d / 2) as N approaches infinity.
 
     1. Draw samples
     2. Normalization
@@ -44,19 +41,47 @@ def cupy_monte_carlo(args, kernel_start_event):
 
     return elapsed, I_estimate
 
-def cupy_conjugate_gradient(args):
+def cupy_conjugate_gradient(args, kernel_start_event):
+    """
+    Conjugate Gradient.
+    1. 
+    2. 
+    """
+    start = cp.cuda.Event()
+    end = cp.cuda.Event()
+
+    kernel_start_event.set()
+    start.record()
+
+    # kernel
+
+    end.record()
+    end.synchronize()
+
+    elapsed = cp.cuda.get_elapsed_time(start, end)
+
+    return elapsed, 
+
+def cupy_dcs(args, kernel_start_event):
     """
 
     """
-    pass
+    start = cp.cuda.Event()
+    end = cp.cuda.Event()
 
-def cupy_dcs(args):
-    """
+    kernel_start_event.set()
+    start.record()
 
-    """
-    pass
+    # kernel
 
-def cupy_spectral(args):
+    end.record()
+    end.synchronize()
+
+    elapsed = cp.cuda.get_elapsed_time(start, end)
+
+    return elapsed, 
+
+def cupy_spectral(args, kernel_start_event):
     """
 
     """
@@ -141,7 +166,10 @@ def cupy_spmv(args, kernel_start_event):
             f"Maximum allowed is {MAX_NNZ:,}."
         )
 
+    start = cp.cuda.Event()
+    end = cp.cuda.Event()
     cp.random.seed(42)
+
     rows = cp.random.randint(0, N, size=nnz, dtype=cp.int32)
     cols = cp.random.randint(0, N, size=nnz, dtype=cp.int32)
     vals = cp.random.rand(nnz, dtype=cp.float32)
@@ -151,14 +179,35 @@ def cupy_spmv(args, kernel_start_event):
     cp.cuda.Stream.null.synchronize()
 
     kernel_start_event.set()
-    t0 = time.perf_counter()
+    start.record()
+    # t0 = time.perf_counter()
+
     y_gpu = kernel(A_gpu, x_gpu)
-    t1 = time.perf_counter()
+    #TODO: transfer to cpu? include in timing?
 
-    return t1-t0
+    # t1 = time.perf_counter()
+    end.record()
+    end.synchronize()
 
-def cupy_stencil(args):
+    elapsed = cp.cuda.get_elapsed_time(start, end)
+
+    return elapsed, 
+
+def cupy_stencil(args, kernel_start_event):
     """
 
     """
-    pass
+    start = cp.cuda.Event()
+    end = cp.cuda.Event()
+
+    kernel_start_event.set()
+    start.record()
+
+    # kernel
+
+    end.record()
+    end.synchronize()
+
+    elapsed = cp.cuda.get_elapsed_time(start, end)
+
+    return elapsed, 
