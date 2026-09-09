@@ -197,8 +197,16 @@ def workload(queue, args, kernel_start_event):
     runtime, result = implementation(args, kernel_start_event)
 
     if args.validate:
-        from numpy_methods import numpy_theoretical_monte_carlo
-        expected = numpy_theoretical_monte_carlo(args.d)
+        from numpy_methods import (
+            numpy_theoretical_mc, numpy_cg
+        )
+
+        numpy_workload_map = {
+            "mc": numpy_theoretical_mc,
+            "cg": numpy_cg,
+        }
+
+        expected = numpy_workload_map[args.workload](args)
 
         queue.put({
             "type": "validate",
