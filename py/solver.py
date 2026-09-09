@@ -54,6 +54,9 @@ def parse_args():
         help="Run a CPU reference calculation and compare the result.",
     )
 
+    ### Workload specific arguments
+
+    # Monte Carlo
     parser.add_argument(
         "--N",
         type=int,
@@ -74,13 +77,30 @@ def parse_args():
             "accurate enough for double-point floating values.",
     )
 
+    # Conjugate Gradient
+    parser.add_argument(
+        "--maxiter",
+        type=int,
+        default=1000,
+        help="Maximum number of iterations. Default is 1000.",
+    )
+
+    parser.add_argument(
+        "--tol",
+        type=float,
+        default=1e-10,
+        help="Convergence tolerance. Default is 1e-10.",
+    )
+
     args = parser.parse_args()
 
     if args.workload == "mc":
         if args.N is None or args.d is None or args.bound is None:
             parser.error("--workload mc requires --N, --d, and --bound")
 
-    # elif args.workload == "spmv":
+    elif args.workload == "cg":
+        if args.N is None:
+            parser.error("--workload cg requires --N")
 
     return args
 
