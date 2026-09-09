@@ -20,9 +20,10 @@ def cupy_monte_carlo(args, kernel_start_event):
     3. Evaluate f(x_i)
     4. MC estimator
     """
+    cp.random.seed(42)
+
     start = cp.cuda.Event()
     end = cp.cuda.Event()
-    cp.random.seed(42)
 
     kernel_start_event.set()
     start.record()
@@ -83,13 +84,14 @@ def cupy_dcs(args, kernel_start_event):
     """
 
     """
+    # Kernel
     start = cp.cuda.Event()
     end = cp.cuda.Event()
 
     kernel_start_event.set()
     start.record()
 
-    # kernel
+
 
     end.record()
     end.synchronize()
@@ -98,68 +100,80 @@ def cupy_dcs(args, kernel_start_event):
 
     return elapsed, 
 
+#! Note: the equation is in 2D, must be in 3D
 def cupy_spectral(args, kernel_start_event):
     """
-
+    Fourier Transformation.
+    1.
+    2.
+    TODO: zavrsi komentar
     """
     from cupyx.scipy.fft import dctn, idctn
 
-    def kernel(u0, alpha, dx, dt, num_steps):
+    def kernel(u0, alpha, dx, dy, dt, num_steps):
         N = u0.shape[0]
         
         # Frequency grid for DCT
-        k = cp.pi * cp.arange(N) / N
-        KX, KY, KZ = cp.meshgrid(k, k, k)
+        kx = cp.pi * cp.arange(N) / N
+        ky = cp.pi * cp.arange(N) / N
+        KX, KY = cp.meshgrid(kx, ky)
         
         # Eigenvalues for Neumann BC
-        k_squared = (2 / dx**2) * (cp.cos(KX) + cp.cos(KY) + cp.cos(KZ) - 2)
+        k_squared = (2 / dx*dy) * (cp.cos(KX) + cp.cos(KY) - 2)
         
         u_hat = dctn(u0, norm='ortho')
         evolution_operator = cp.exp(alpha * k_squared * dt)
         
-        for step in range(num_steps):
+        for _ in range(num_steps):
             u_hat = u_hat * evolution_operator
         
-        u_final = idctn(u_hat, norm='ortho').real    
+        u_final = idctn(u_hat, norm='ortho').real
         return u_final
 
+    A = 100.0               # Peak temperature (°C)
+    sigma_initial = 0.2     # Initial width (m)
+    x0, y0 = 0.5, 0.5       # Centre
+    alpha = 1.6563e-4       # Thermal diffusivity of pure silver (99.9%) (m^2/s)
+    Lx, Ly = 1.0, 1.0       # Domain limit (metres)
 
-    A = 100.0                   # Peak temperature (°C)
-    sigma_initial = 0.2         # Initial width (m)
-    x0 = 0.5                    # Centre
-    alpha = 1.6563e-4           # Thermal diffusivity of pure silver (m^2/s)
-    L = 1.0                     # Domain limit (m)
+    # Grid points
+    nx = args.grid_size
+    ny = args.grid_size
 
-    spacing = L / (args.grid_size - 1)
-    dt = 0.0003  #! zasto ovaj broj
-    t_final = 60
+    dx = Lx / (nx - 1)      # x spacing
+    dy = Ly / (ny - 1)      # y spacing
+    dt = 0.0003             # Time step (s)
+    t_final = 60            # Final time step (s)
     num_steps = int(t_final / dt)
 
-    x = cp.linspace(0.0, L, args.grid_size)
-    y = cp.linspace(0.0, L, args.grid_size)
-    z = cp.linspace(0.0, L, args.grid_size)
-    X, Y, Z = cp.meshgrid(x, y, z)
+    x = cp.linspace(0.0, Lx, nx)
+    y = cp.linspace(0.0, Ly, ny)
+    X, Y = cp.meshgrid(x, y)
 
     # Initial condition (Gaussian bump)
-    u0 = A * cp.exp( -((X - x0)**2 + (Y - x0)**2 + (Z - x0)**2) / (2 * sigma_initial**2) )
+    u0 = A * cp.exp( -((X - x0)**2 + (Y - y0)**2) / (2 * sigma_initial**2) )
 
-    # Discarded warm-up run
-    kernel()
+    # Warm-up run, discarded
+    kernel(u0, alpha, dx, dy, dt, num_steps)
 
-    t0 = time.perf_counter()
+    # Kernel
+    start = cp.cuda.Event()
+    end = cp.cuda.Event()
 
-    u_final = kernel()
-    u_cpu = cp.asnumpy(u_final)
+    kernel_start_event.set()
+    start.record()
 
-    t1 = time.perf_counter()
-    print(f"Time taken: {t1-t0:.5}s")
+    u_final = kernel(u0, alpha, dx, dy, dt, num_steps)
 
-    filename_dir = Path(f"results")
-    filename_dir.mkdir(exist_ok=True)
-    filename = filename_dir / f"cupy_spectral_{args.grid_size}.csv"
-    np.savetxt(filename, u_cpu, delimiter=",")
+    end.record()
+    end.synchronize()
 
-#TODO: dodaj optional argument za spmv
+    elapsed = cp.cuda.get_elapsed_time(start, end)
+    total = cp.sum(u_final).item()
+
+    return elapsed, total
+
+#TODO: dodaj optional argument za spmv, formatiraj
 def cupy_spmv(args, kernel_start_event):
     """
     Calculates the sparse matrix vector multiplication y = Ax.
@@ -214,13 +228,12 @@ def cupy_stencil(args, kernel_start_event):
     """
 
     """
+    # Kernel
     start = cp.cuda.Event()
     end = cp.cuda.Event()
 
     kernel_start_event.set()
     start.record()
-
-    # kernel
 
     end.record()
     end.synchronize()
