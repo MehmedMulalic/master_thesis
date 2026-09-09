@@ -4,6 +4,9 @@ import multiprocessing as mp
 import pynvml
 import time
 
+#!ISSUE: validation obfuscates results; samples are procuring during validation.
+#! This means that there are empty values at the end of the stopwatch.
+
 MONITOR_INTERVAL = 0.01
 
 FRAMEWORKS = {
@@ -198,12 +201,14 @@ def workload(queue, args, kernel_start_event):
 
     if args.validate:
         from numpy_methods import (
-            numpy_theoretical_mc, numpy_cg
+            numpy_theoretical_mc, numpy_cg, numpy_dcs,
+            numpy_spectral, numpy_spmv, numpy_stencil
         )
 
         numpy_workload_map = {
             "mc": numpy_theoretical_mc,
             "cg": numpy_cg,
+            "spectral": numpy_spectral
         }
 
         expected = numpy_workload_map[args.workload](args)
