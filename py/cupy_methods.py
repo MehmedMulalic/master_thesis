@@ -43,24 +43,41 @@ def cupy_monte_carlo(args, kernel_start_event):
 
 def cupy_conjugate_gradient(args, kernel_start_event):
     """
-    Conjugate Gradient.
-    1. 
+    Conjugate Gradient. Uses sin(pi * x). Initial x is 0.
+    1. Build sparse Laplacian matrix
     2. 
-    """
+    """ #TODO: zavrsi comment
+
+    from cupyx.scipy.sparse import diags as sparse_diags
+    from cupyx.scipy.sparse.linalg import cg
+
+    # Laplacian matrix
+    h = 1.0 / (args.N + 1)
+    main_diag = 2.0 * cp.ones(args.N)
+    off_diag = -1.0 * cp.ones(args.N - 1)
+    A = sparse_diags([off_diag, main_diag, off_diag], offsets=[-1, 0, 1], format="csr")
+    A = A / (h ** 2)
+
+    # Calculate known solution
+    grid = cp.linspace(0, 1, args.N + 2)[1:-1]
+    u = cp.sin(cp.pi * grid)
+    b = A @ u
+
+    # Kernel
     start = cp.cuda.Event()
     end = cp.cuda.Event()
 
     kernel_start_event.set()
     start.record()
 
-    # kernel
-
+    x = cg(A, b, rtol=1e-10, maxiter=args.maxiter)
+    
     end.record()
     end.synchronize()
 
     elapsed = cp.cuda.get_elapsed_time(start, end)
 
-    return elapsed, 
+    return elapsed, x
 
 def cupy_dcs(args, kernel_start_event):
     """
