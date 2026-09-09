@@ -288,7 +288,7 @@ if __name__ == "__main__":
     stop_event.set()
 
     workload_process.join()
-    monitor_process.join()
+    monitor_process.join(timeout=30)
 
     # Fetch summary
     while True:
