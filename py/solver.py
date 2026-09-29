@@ -25,14 +25,7 @@ NUM_METHOD = {
 
 def parse_args():
     parser = ArgumentParser(
-        description="Run the 3D heat equation benchmark.",
-    )
-
-    parser.add_argument(
-        "--grid-size",
-        type=int,
-        required=True,
-        help="Number of grid points along each spatial dimension.",
+        description="Run the multi-framework GPU solver.",
     )
 
     parser.add_argument(
@@ -95,15 +88,26 @@ def parse_args():
         help="Convergence tolerance. Default is 1e-10.",
     )
 
+    # Heat Equation
+    parser.add_argument(
+        "--grid-size",
+        type=int,
+        help="Number of grid points along each spatial dimension.",
+    )
+
     args = parser.parse_args()
 
     if args.workload == "mc":
         if args.N is None or args.d is None or args.bound is None:
-            parser.error("--workload mc requires --N, --d, and --bound")
+            parser.error("Specified workload requires --N, --d, and --bound")
 
     elif args.workload == "cg":
         if args.N is None:
-            parser.error("--workload cg requires --N")
+            parser.error("Specified workload requires --N")
+
+    elif args.workload == "spectral" or args.workload == "spmv" or args.workload == "stencil":
+        if args.grid_size is None:
+            parser.error("Specified workload requires --grid-size")
 
     return args
 
