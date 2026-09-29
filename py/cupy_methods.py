@@ -5,11 +5,7 @@ import time
 
 MAX_NNZ = 4_000_000_000    # 32GB VRAM
 
-#! ################
-# da li je potrebno warm-up kernel uraditi na svakom kernel-u? vjerujem da treba
-# tako da treba u monte carlo ubaciti warm up kernel
-#! ################
-
+#* Finished!
 def cupy_monte_carlo(args, kernel_start_event):
     """
     Monte Carlo integration of the Gaussian integral.
@@ -20,7 +16,23 @@ def cupy_monte_carlo(args, kernel_start_event):
     3. Evaluate f(x_i)
     4. MC estimator
     """
-    cp.random.seed(42)
+
+    def kernel(seed=None):
+        if seed is None:
+            cp.random.seed()
+        else:
+            cp.random.seed(seed)
+
+        X = cp.random.uniform(-args.bound, args.bound, size=(args.N, args.d), dtype=cp.float32)
+        sq_norms = cp.sum(X**2, axis=1)
+        f_vals = cp.exp(-sq_norms)
+
+        volume = (2 * args.bound) ** args.d
+        I_estimate = volume * cp.mean(f_vals)
+
+        return I_estimate
+
+    _ = kernel()
 
     start = cp.cuda.Event()
     end = cp.cuda.Event()
@@ -28,12 +40,7 @@ def cupy_monte_carlo(args, kernel_start_event):
     kernel_start_event.set()
     start.record()
 
-    X = cp.random.uniform(-args.bound, args.bound, size=(args.N, args.d), dtype=cp.float32)
-    sq_norms = cp.sum(X**2, axis=1)
-    f_vals = cp.exp(-sq_norms)
-
-    volume = (2 * args.bound) ** args.d
-    I_estimate = volume * cp.mean(f_vals)
+    I_estimate = kernel(42)
 
     end.record()
     end.synchronize()
@@ -42,12 +49,13 @@ def cupy_monte_carlo(args, kernel_start_event):
 
     return elapsed, I_estimate
 
+#* Finished!
 def cupy_conjugate_gradient(args, kernel_start_event):
     """
     Conjugate Gradient. Uses sin(pi * x). Initial x is 0.
     1. Build sparse Laplacian matrix
     2. 
-    """ #TODO: zavrsi comment
+    """
 
     from cupyx.scipy.sparse import diags as sparse_diags
     from cupyx.scipy.sparse.linalg import cg
@@ -65,6 +73,8 @@ def cupy_conjugate_gradient(args, kernel_start_event):
     b = A @ u
 
     # Kernel
+    _ = cg(A, b, rtol=1e-10, maxiters=args.maxiter)
+
     start = cp.cuda.Event()
     end = cp.cuda.Event()
 
@@ -84,6 +94,7 @@ def cupy_dcs(args, kernel_start_event):
     """
 
     """
+
     # Kernel
     start = cp.cuda.Event()
     end = cp.cuda.Event()
@@ -177,7 +188,7 @@ def cupy_spectral(args, kernel_start_event):
 
     return elapsed, sum_total
 
-#TODO: dodaj optional argument za spmv, formatiraj
+#* Finished!
 def cupy_spmv(args, kernel_start_event):
     """
     Calculates the sparse matrix vector multiplication y = Ax.
@@ -186,10 +197,11 @@ def cupy_spmv(args, kernel_start_event):
 
     import cupyx.scipy.sparse as csp
 
-    def kernel(A_csr, x, iterations=200):
-        for _ in range(iterations):
+    def kernel(A_csr, x):
+        for _ in range(args.iterations):
             x = A_csr @ x
             x = x / cp.linalg.norm(x)
+
         cp.cuda.Stream.null.synchronize()
         return x
 
@@ -202,32 +214,35 @@ def cupy_spmv(args, kernel_start_event):
             f"Maximum allowed is {MAX_NNZ:,}."
         )
 
-    start = cp.cuda.Event()
-    end = cp.cuda.Event()
     cp.random.seed(42)
 
     rows = cp.random.randint(0, N, size=nnz, dtype=cp.int32)
     cols = cp.random.randint(0, N, size=nnz, dtype=cp.int32)
     vals = cp.random.rand(nnz, dtype=cp.float32)
 
-    A_gpu = csp.coo_matrix((vals, (rows, cols)), shape=(N, N)).tocsr()
-    x_gpu = cp.random.rand(N, dtype=cp.float32)
+    A = csp.coo_matrix((vals, (rows, cols)), shape=(N, N)).tocsr()
+    x = cp.random.rand(N, dtype=cp.float32)
+
     cp.cuda.Stream.null.synchronize()
+
+    # Kernel
+    _ = kernel(A, x)
+
+    start = cp.cuda.Event()
+    end = cp.cuda.Event()
 
     kernel_start_event.set()
     start.record()
-    # t0 = time.perf_counter()
 
-    y_gpu = kernel(A_gpu, x_gpu)
-    #TODO: transfer to cpu? include in timing?
+    y = kernel(A, x)
 
-    # t1 = time.perf_counter()
     end.record()
     end.synchronize()
 
     elapsed = cp.cuda.get_elapsed_time(start, end)
+    sum_total = cp.sum(y).item()
 
-    return elapsed, 
+    return elapsed, sum_total
 
 def cupy_stencil(args, kernel_start_event):
     """
