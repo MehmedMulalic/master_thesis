@@ -78,7 +78,8 @@ def parse_args():
         "--maxiter",
         type=int,
         default=1000,
-        help="Maximum number of iterations. Default is 1000.",
+        help="Maximum number of iterations for the Conjugate Gradient. " \
+            "Default is 1000.",
     )
 
     parser.add_argument(
@@ -88,20 +89,25 @@ def parse_args():
         help="Convergence tolerance. Default is 1e-10.",
     )
 
-    # Heat Equation
+    ## Heat Equation
+
     parser.add_argument(
         "--grid-size",
         type=int,
         help="Number of grid points along each spatial dimension.",
     )
 
+    parser.add_argument(
+        "--iterations",
+        type=int,
+        default=200,
+        help="Amount of iterations for Sparse Matrix-Vector Multiplication. " \
+            "Default is 200.",
+    )
+
     args = parser.parse_args()
 
-    if args.workload == "mc":
-        if args.N is None or args.d is None or args.bound is None:
-            parser.error("Specified workload requires --N, --d, and --bound")
-
-    elif args.workload == "cg":
+    if args.workload == "mc" or args.workload == "cg":
         if args.N is None:
             parser.error("Specified workload requires --N")
 
