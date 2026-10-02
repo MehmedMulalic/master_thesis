@@ -89,8 +89,15 @@ def parse_args():
         help="Convergence tolerance. Default is 1e-10.",
     )
 
-    ## Heat Equation
+    # DCS
+    parser.add_argument(
+        "--particle-count",
+        type=int,
+        default=100,
+        help="Amount of particles for the DCS. Default is 100."
+    )
 
+    # Heat Equation
     parser.add_argument(
         "--grid-size",
         type=int,

@@ -1,9 +1,9 @@
-from pathlib import Path
 import cupy as cp
 import numpy as np
 import time
 
-MAX_NNZ = 4_000_000_000    # 32GB VRAM
+MAX_NNZ = 4_000_000_000     # 32GB VRAM
+K_E = 8.987551786214e9      # https://en.wikipedia.org/wiki/Coulomb%27s_law
 
 #* Finished!
 def cupy_monte_carlo(args, kernel_start_event):
@@ -52,22 +52,22 @@ def cupy_monte_carlo(args, kernel_start_event):
 #* Finished!
 def cupy_conjugate_gradient(args, kernel_start_event):
     """
-    Conjugate Gradient. Uses sin(pi * x). Initial x is 0.
-    1. Build sparse Laplacian matrix
-    2. 
+    Using Conjugate Gradient to solve -d^2u/dx^2 = sin(pi * x) with zero boundary conditions
+    whose exact solution is known to be u = sin(pi*x)/pi^2. Initial x is set to 0.
+    1. Build the sparse Laplacian matrix A
+    2. Calculate the solution b
+    3. Iterate until convergence
     """
 
     from cupyx.scipy.sparse import diags as sparse_diags
     from cupyx.scipy.sparse.linalg import cg
 
-    # Laplacian matrix
     h = 1.0 / (args.N + 1)
     main_diag = 2.0 * cp.ones(args.N)
     off_diag = -1.0 * cp.ones(args.N - 1)
     A = sparse_diags([off_diag, main_diag, off_diag], offsets=[-1, 0, 1], format="csr")
     A = A / (h ** 2)
 
-    # Calculate known solution
     grid = cp.linspace(0, 1, args.N + 2)[1:-1]
     u = cp.sin(cp.pi * grid)
     b = A @ u
@@ -90,10 +90,43 @@ def cupy_conjugate_gradient(args, kernel_start_event):
 
     return elapsed, x
 
+#* Finished!
 def cupy_dcs(args, kernel_start_event):
     """
-
+    Implementation of the Direct Coulomb Summation.
+    Defines atoms as an array of [x, y, z, q] where x, y, z are the position and q is the charge.
+    1. Sample random atom values
+    2. Calculate U = k_e * (Ei qi/ri)
     """
+
+    def kernel(atoms, chunk=1 << 16, k_e=K_E):
+        nx = ny = nz = args.grid_size
+        total = nx * ny * nz
+        result = cp.empty(total, dtype=cp.float32)
+        pos, q = atoms[:, :3], atoms[:, 3]
+
+        for start in range(0, total, chunk):
+            idx = cp.arange(start, min(start + chunk, total), dtype=cp.int32)
+            gx = (idx % nx).astype(cp.float32)
+            gy = ((idx // nx) % ny).astype(cp.float32)
+            gz = (idx // (nx * ny)).astype(cp.float32)
+
+            dx = gx[:, None] - pos[None, :, 0]
+            dy = gy[:, None] - pos[None, :, 1]
+            dz = gz[:, None] - pos[None, :, 2]
+            r = cp.sqrt(dx*dx + dy*dy + dz*dz)
+
+            contrib = cp.true_divide(q[None, :], r, out=cp.zeros_like(r, dtype=cp.float32), where=(r > 0))
+            result[start:start + len(idx)] = k_e * contrib.sum(axis=1)
+
+        return result.reshape(nz, ny, nx)
+
+    rng = np.random.default_rng(42)
+
+    atoms = np.empty((args.particle_count, 4), dtype=np.float32)
+    atoms[:, :3] = rng.integers(0, args.grid_size, size=(args.particle_count, 3), endpoint=True)
+    atoms[:, 3] = rng.uniform(-5e-6, 5e-6, size=args.particle_count)
+    atoms = cp.asarray(atoms)
 
     # Kernel
     start = cp.cuda.Event()
@@ -102,14 +135,15 @@ def cupy_dcs(args, kernel_start_event):
     kernel_start_event.set()
     start.record()
 
-    q = kernel()
+    q = kernel(atoms)
 
     end.record()
     end.synchronize()
 
     elapsed = cp.cuda.get_elapsed_time(start, end)
+    sum_total = cp.sum(q).item()
 
-    return elapsed, q
+    return elapsed, sum_total
 
 #* Finished!
 def cupy_spectral(args, kernel_start_event):
@@ -249,12 +283,17 @@ def cupy_stencil(args, kernel_start_event):
 
     """
 
+    def kernel():
+        pass
+
     # Kernel
     start = cp.cuda.Event()
     end = cp.cuda.Event()
 
     kernel_start_event.set()
     start.record()
+
+    kernel()
 
     end.record()
     end.synchronize()
