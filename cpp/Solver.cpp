@@ -41,15 +41,55 @@ ParsedArgs parse_args(int argc, char** argv) {
     CLI::App app{""};
     ParsedArgs args;
 
-    app.add_option("--grid-size", args.grid_size, "Number of grid points along each spatial dimension.")
-        ->required();
-
     app.add_option("--workload", args.workload,
                     "Numerical method to calculate: "
                     "Monte Carlo, Conjugate Gradient, Direct Coulomb Simulation, "
                     "Spectral, Sparse Matrix Vector, Stencil.")
         ->required()
         ->check(CLI::IsMember({"mc", "cg", "dcs", "spectral", "spmv", "stencil"}));
+
+    app.add_option(
+        "--N", args.N,
+        "Problem size N for the Monte Carlo integration. Default is 100."
+    );
+
+    app.add_option(
+        "--d", args.d,
+        "Dimension d for the Monte Carlo integration. Default is 10."
+    );
+
+    app.add_option(
+        "--bound", args.bound,
+        "Domain bound used for volume for Monte Carlo. Default value is 6.0, "
+        "accurate enough for double-point floating values."
+    );
+
+    app.add_option(
+        "--maxiter", args.maxiter,
+        "Maximum number of iterations for the Conjugate Gradient. "
+        "Default is 1000."
+    );
+
+    app.add_option(
+        "--tol", args.tol,
+        "Convergence tolerance for the Conjugate Gradient. Default is 1e-10."
+    );
+
+    app.add_option(
+        "--particle-count", args.particle_count,
+        "Amount of particles for the DCS. Default is 100."
+    );
+
+    app.add_option(
+        "--grid-size", args.grid_size,
+        "Number of grid points along each spatial dimension needed to solve the Heat Equation."
+    )->required();
+
+    app.add_option(
+        "--iterations", args.iterations,
+        "Amount of iterations for Sparse Matrix-Vector Multiplication. "
+        "Default is 200."
+    );
 
     try {
         app.parse(argc, argv);
