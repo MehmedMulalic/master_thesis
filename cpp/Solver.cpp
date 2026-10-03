@@ -118,12 +118,12 @@ public:
         nvmlShutdown();
     }
 
-    const std::string& device_name() const { return device_name_; }
+    const std::string& device_name()    const { return device_name_; }
     const std::string& driver_version() const { return driver_version_; }
 
     void start() {
-        nvmlUtilization_t warm{};
-        nvmlDeviceGetUtilizationRates(handle_, &warm);
+        nvmlUtilization_t warmup{};
+        nvmlDeviceGetUtilizationRates(handle_, &warmup);
         ready_flag_.store(true);
         thread_ = std::thread(&GpuMonitor::run, this);
     }
@@ -214,7 +214,7 @@ private:
     Summary summary_{};
 };
 
-bool verify_injective_indexing(size_t X, size_t Y, size_t Z, 
+bool verify_indexing(size_t X, size_t Y, size_t Z, 
                                 std::function<size_t(size_t,size_t,size_t)> index_fn,
                                 size_t max_valid_index) {
     std::unordered_set<size_t> seen;
@@ -237,9 +237,7 @@ bool verify_injective_indexing(size_t X, size_t Y, size_t Z,
 
 int main(int argc, char** argv) {
     ParsedArgs args = parse_args(argc, argv);
-
-    std::printf("Workload:       %s\n", workload_map.at(args.workload).c_str());
-    std::printf("Grid size:     [%d, %d, %d]\n\n", args.grid_size, args.grid_size, args.grid_size);
+    std::cout << "Workload:       " << workload_map.at(args.workload) << "\n\n";
 
     GpuMonitor monitor;
     monitor.start();
@@ -251,7 +249,7 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    auto output = workload->second(args);
+    auto result = workload->second(args);
 
     monitor.stop();
     Summary s = monitor.summary();
