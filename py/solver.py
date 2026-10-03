@@ -355,6 +355,6 @@ if __name__ == "__main__":
             print(f"Avg Memory Utilization: {message['mem_util_avg']:.2f} %")
             print(f"Max Power:              {message['power_max']:.2f} W")
             print(f"Avg Power:              {message['power_avg']:.2f} W")
-            print(f"Samples:                {message['num_samples']}")
+            print(f"Number of Samples:      {message['num_samples']}")
 
     print()

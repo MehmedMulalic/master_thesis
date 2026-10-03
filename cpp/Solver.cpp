@@ -49,13 +49,13 @@ struct Summary {
 
 std::ostream& operator<<(std::ostream& os, const Summary& summary) {
     os << "* GPU Summary:\n"
-       << "  - Max GPU Utilizaiton:           " << summary.gpu_max << " %\n"
-       << "  - Average GPU Utilization:       " << summary.gpu_avg << " %\n"
-       << "  - Max Memory Utilization:        " << summary.mem_util_max << " %\n"
-       << "  - Average Memory Utilization:    " << summary.mem_util_avg << " %\n"
-       << "  - Max Power Consumption:         " << summary.power_max << " W\n"
-       << "  - Average Power Consumption:     " << summary.power_avg << " W\n"
-       << "  - Number of samples:             " << summary.n_samples << '\n';
+       << "  - Max GPU Utilizaiton:             " << summary.gpu_max << " %\n"
+       << "  - Avg GPU Utilization:             " << summary.gpu_avg << " %\n"
+       << "  - Max Memory Utilization:          " << summary.mem_util_max << " %\n"
+       << "  - Avg Memory Utilization:          " << summary.mem_util_avg << " %\n"
+       << "  - Max Power Consumption:           " << summary.power_max << " W\n"
+       << "  - Avg Power Consumption:           " << summary.power_avg << " W\n"
+       << "  - Number of samples:               " << summary.n_samples << '\n';
 
     return os;
 }
