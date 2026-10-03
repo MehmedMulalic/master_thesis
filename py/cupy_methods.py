@@ -17,6 +17,9 @@ def cupy_monte_carlo(args, kernel_start_event):
     4. MC estimator
     """
 
+    print(f"\nProblem size N:     {args.N}")
+    print(f"Dimension d:        {args.d}")
+
     def kernel(seed=None):
         if seed is None:
             cp.random.seed()
@@ -59,6 +62,9 @@ def cupy_conjugate_gradient(args, kernel_start_event):
     3. Iterate until convergence
     """
 
+    print(f"\nProblem size N:             {args.N}")
+    print(f"Maximum iteration count:    {args.maxiter}")
+
     from cupyx.scipy.sparse import diags as sparse_diags
     from cupyx.scipy.sparse.linalg import cg
 
@@ -98,6 +104,9 @@ def cupy_dcs(args, kernel_start_event):
     1. Sample random atom values
     2. Calculate U = k_e * (Ei qi/ri)
     """
+
+    print(f"\nGrid size:              [{args.grid_size}, {args.grid_size}, {args.grid_size}]")
+    print(f"Amount of particles:    {args.particle_count}")
 
     def kernel(atoms, chunk=1 << 16, k_e=K_E):
         nx = ny = nz = args.grid_size
@@ -152,6 +161,8 @@ def cupy_spectral(args, kernel_start_event):
     1.
     2.
     """
+
+    print(f"\nGrid size:          [{args.grid_size}, {args.grid_size}, {args.grid_size}]")
 
     from cupyx.scipy.fft import dctn, idctn
 
@@ -227,6 +238,8 @@ def cupy_spmv(args, kernel_start_event):
     Calculates the sparse matrix vector multiplication y = Ax.
     The kernel utilizes power iteration to increase its duration.
     """
+
+    print(f"\nAmount of iterations:       {args.iterations}")
 
     import cupyx.scipy.sparse as csp
 
