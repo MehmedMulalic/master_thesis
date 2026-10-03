@@ -349,8 +349,8 @@ if __name__ == "__main__":
 
         if message["type"] == "gpu_summary":
             print()
-            print(f"Avg GPU Utilization:    {message['gpu_avg']:.2f} %")
             print(f"Max GPU Utilization:    {message['gpu_max']:.2f} %")
+            print(f"Avg GPU Utilization:    {message['gpu_avg']:.2f} %")
             print(f"Max Memory Utilization: {message['mem_util_max']:.2f} %")
             print(f"Avg Memory Utilization: {message['mem_util_avg']:.2f} %")
             print(f"Max Power:              {message['power_max']:.2f} W")
