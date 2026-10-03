@@ -155,27 +155,12 @@ def cupy_spectral(args, kernel_start_event):
 
     from cupyx.scipy.fft import dctn, idctn
 
-    def kernel(u0, alpha, dx, dy, dz, dt, num_steps):
-        N = u0.shape[0]
-        
-        # Frequency grid for DCT
-        kx = cp.pi * cp.arange(N) / N
-        ky = cp.pi * cp.arange(N) / N
-        kz = cp.pi * cp.arange(N) / N
-        KX, KY, KZ = cp.meshgrid(kx, ky, kz)
-        
-        # Eigenvalues for Neumann BC
-        k_squared = (
-            2 * (cp.cos(KX) - 1) / dx**2 +
-            2 * (cp.cos(KY) - 1) / dy**2 +
-            2 * (cp.cos(KZ) - 1) / dz**2
-        )
-
+    def kernel(u0, alpha, k_squared, dt, num_steps):
         u_hat = dctn(u0, norm='ortho')
         evolution_operator = cp.exp(alpha * k_squared * dt)
         
         for _ in range(num_steps):
-            u_hat = u_hat * evolution_operator
+            u_hat = cp.multiply(u_hat, evolution_operator, out=u_hat)
         
         u_final = idctn(u_hat, norm='ortho').real
         return u_final
@@ -202,9 +187,23 @@ def cupy_spectral(args, kernel_start_event):
 
     # Initial condition (Gaussian bump)
     u0 = A * cp.exp( -((X - x0)**2 + (Y - y0)**2 + (Z - z0)**2) / (2 * sigma_initial**2) )
+    N = u0.shape[0]
+            
+    # Frequency grid
+    kx = cp.pi * cp.arange(N) / N
+    ky = cp.pi * cp.arange(N) / N
+    kz = cp.pi * cp.arange(N) / N
+    KX, KY, KZ = cp.meshgrid(kx, ky, kz)
+    
+    # Eigenvalues for Neumann BC
+    k_squared = (
+        2 * (cp.cos(KX) - 1) / dx**2 +
+        2 * (cp.cos(KY) - 1) / dy**2 +
+        2 * (cp.cos(KZ) - 1) / dz**2
+    )
 
     # Kernel
-    _ = kernel(u0, alpha, dx, dy, dz, dt, num_steps)
+    _ = kernel(u0, alpha, k_squared, dt, 1)
 
     start = cp.cuda.Event()
     end = cp.cuda.Event()
@@ -212,7 +211,7 @@ def cupy_spectral(args, kernel_start_event):
     kernel_start_event.set()
     start.record()
 
-    u_final = kernel(u0, alpha, dx, dy, dt, num_steps)
+    u_final = kernel(u0, alpha, k_squared, dt, num_steps)
 
     end.record()
     end.synchronize()
