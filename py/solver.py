@@ -47,7 +47,7 @@ def parse_args():
     parser.add_argument(
         "--validate",
         action="store_true",
-        help="Run a CPU reference calculation and compare the result.",
+        help="Run a CPU reference calculation and compare the result. BROKEN",
     )
 
     ### Workload specific arguments
@@ -56,13 +56,15 @@ def parse_args():
     parser.add_argument(
         "--N",
         type=int,
-        help="Problem size N.",
+        default=100,
+        help="Problem size N for the Monte Carlo integration. Default is 100.",
     )
 
     parser.add_argument(
         "--d",
         type=int,
-        help="Dimension d.",
+        default=10,
+        help="Dimension d for the Monte Carlo integration. Default is 10.",
     )
 
     parser.add_argument(
@@ -86,7 +88,7 @@ def parse_args():
         "--tol",
         type=float,
         default=1e-10,
-        help="Convergence tolerance. Default is 1e-10.",
+        help="Convergence tolerance for the Conjugate Gradient. Default is 1e-10.",
     )
 
     # DCS
@@ -101,7 +103,7 @@ def parse_args():
     parser.add_argument(
         "--grid-size",
         type=int,
-        help="Number of grid points along each spatial dimension.",
+        help="Number of grid points along each spatial dimension needed to solve the Heat Equation.",
     )
 
     parser.add_argument(
@@ -114,11 +116,7 @@ def parse_args():
 
     args = parser.parse_args()
 
-    if args.workload == "mc" or args.workload == "cg":
-        if args.N is None:
-            parser.error("Specified workload requires --N")
-
-    elif args.workload == "spectral" or args.workload == "spmv" or args.workload == "stencil":
+    if args.workload == "spectral" or args.workload == "spmv" or args.workload == "stencil":
         if args.grid_size is None:
             parser.error("Specified workload requires --grid-size")
 
@@ -279,7 +277,6 @@ if __name__ == "__main__":
 
     print(f"Framework:      {FRAMEWORKS[args.framework]}")
     print(f"Workload:       {NUM_METHOD[args.workload]}")
-    print(f"Grid size:      [{args.grid_size}, {args.grid_size}, {args.grid_size}]")
     print()
 
     queue = mp.Queue()
