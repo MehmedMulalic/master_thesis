@@ -29,12 +29,12 @@ static const std::unordered_map<std::string, WorkloadFn> workload_func_map = {
 };
 
 static const std::unordered_map<std::string, std::string> workload_map = {
-    {"mc", "Monte Carlo"},
-    {"cg", "Conjugate Gradient"},
-    {"dcs", "Direct Coulomb Summation"},
-    {"spectral", "Spectral"},
-    {"spmv", "Sparse Matrix-Vector Multiplication"},
-    {"stencil", "Stencil"}
+    {"mc",              "Monte Carlo"},
+    {"cg",              "Conjugate Gradient"},
+    {"dcs",             "Direct Coulomb Summation"},
+    {"spectral",        "Spectral"},
+    {"spmv",            "Sparse Matrix-Vector Multiplication"},
+    {"stencil",         "Stencil"}
 };
 
 struct Summary {
