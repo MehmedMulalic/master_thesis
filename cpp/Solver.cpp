@@ -37,6 +37,29 @@ static const std::unordered_map<std::string, std::string> workload_map = {
     {"stencil",         "Stencil"}
 };
 
+ParsedArgs parse_args(int argc, char** argv) {
+    CLI::App app{""};
+    ParsedArgs args;
+
+    app.add_option("--grid-size", args.grid_size, "Number of grid points along each spatial dimension.")
+        ->required();
+
+    app.add_option("--workload", args.workload,
+                    "Numerical method to calculate: "
+                    "Monte Carlo, Conjugate Gradient, Direct Coulomb Simulation, "
+                    "Spectral, Sparse Matrix Vector, Stencil.")
+        ->required()
+        ->check(CLI::IsMember({"mc", "cg", "dcs", "spectral", "spmv", "stencil"}));
+
+    try {
+        app.parse(argc, argv);
+    } catch (const CLI::ParseError &e) {
+        std::exit(app.exit(e));
+    }
+
+    return args;
+}
+
 struct Summary {
     unsigned int    gpu_max         = 0;
     double          gpu_avg         = 0.0;
@@ -190,29 +213,6 @@ private:
 
     Summary summary_{};
 };
-
-ParsedArgs parse_args(int argc, char** argv) {
-    CLI::App app{""};
-    ParsedArgs args;
-
-    app.add_option("--grid-size", args.grid_size, "Number of grid points along each spatial dimension.")
-        ->required();
-
-    app.add_option("--workload", args.workload,
-                    "Numerical method to calculate: "
-                    "Monte Carlo, Conjugate Gradient, Direct Coulomb Simulation, "
-                    "Spectral, Sparse Matrix Vector, Stencil.")
-        ->required()
-        ->check(CLI::IsMember({"mc", "cg", "dcs", "spectral", "spmv", "stencil"}));
-
-    try {
-        app.parse(argc, argv);
-    } catch (const CLI::ParseError &e) {
-        std::exit(app.exit(e));
-    }
-
-    return args;
-}
 
 bool verify_injective_indexing(size_t X, size_t Y, size_t Z, 
                                 std::function<size_t(size_t,size_t,size_t)> index_fn,
