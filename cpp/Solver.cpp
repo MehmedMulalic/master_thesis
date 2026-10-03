@@ -15,7 +15,7 @@
 #include "SyclMethods.hpp"
 #include "ParsedArgs.hpp"
 
-#define MONITOR_INTERVAL_MILIS 200
+#define MONITOR_INTERVAL_MILIS 10
 
 using WorkloadFn = std::function<double(const ParsedArgs&)>;
 
