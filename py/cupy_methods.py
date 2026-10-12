@@ -1,6 +1,7 @@
 import cupy as cp
 import numpy as np
 import time
+import StabilityException
 
 MAX_NNZ = 4_000_000_000     # 32GB VRAM
 K_E = 8.987551786214e9      # https://en.wikipedia.org/wiki/Coulomb%27s_law
@@ -286,24 +287,84 @@ def cupy_spmv(args, kernel_start_event):
 
 def cupy_stencil(args, kernel_start_event):
     """
+    Explicit 7-point stencil for the 3D heat equation.
+    Assumes equal spacing in all three dimensions (dx=dy=dz). Will not work for unequal spacing.
+    
+    Stability, for equal spacing, is defined as r = alpha*dt / spacing^2 for which, in 3D, must be r <= 1/6.
 
+    The stencil is calculated by convolving the laplacian kernel.
+    Uses the 'reflect' mode as per defined Neumann boundary condition.
     """
 
-    def kernel():
-        pass
+    from cupyx.scipy.ndimage import convolve
 
+    def kernel(u0, alpha, kernel_array, dt, num_steps):
+        for _ in range(num_steps):
+            laplacian = convolve(u0, kernel_array)
+            u0 += alpha * dt * laplacian
+
+        return u0
+
+    A = 100.0                       # Peak temperature (°C)
+    sigma_initial = 0.2             # Initial width (m)
+    alpha = 1.6563e-4               # Thermal diffusivity of pure silver (99.9%) (m^2/s)
+
+    x0 = y0 = z0 = 0.5              # Center
+    Lx = Ly = Lz = 1.0              # Domain limit (metres)
+    nx = ny = nz = args.grid_size
+
+    dx = Lx / (nx - 1)              # x spacing (we assume dx=dy=dz in this case)
+    dt = 0.0003                     # Time step (s)
+    t_final = 60                    # Final time step (s)
+    num_steps = int(t_final / dt)
+
+    # Stability
+    r = alpha * dt / dx**2          # Holds only if equal spacing dx=dy=dz
+    if (r > 1/6):                   # Coefficient for 3D space
+        raise StabilityException(f"Unstable simulation; must be below 0.167. Current r: {r}")
+
+    x = cp.linspace(0.0, Lx, nx)
+    y = cp.linspace(0.0, Ly, ny)
+    z = cp.linspace(0.0, Lz, nz)
+    X, Y, Z = cp.meshgrid(x, y, z)
+
+    # Laplacian kernel
+    kernel_array = cp.zeros((3, 3, 3), dtype=cp.float32)
+
+    # Above, below (z-axis)
+    kernel_array[0, 1, 1] = 1
+    kernel_array[2, 1, 1] = 1
+
+    # Up, down (y-axis)
+    kernel_array[1, 0, 1] = 1
+    kernel_array[1, 2, 1] = 1
+
+    # Left, right (x-axis)
+    kernel_array[1, 1, 0] = 1
+    kernel_array[1, 1, 2] = 1
+
+    # Center
+    kernel_array[1, 1, 1] = -6
+    kernel_array /= dx**2
+
+    # Initial condition (Gaussian bump)
+    u0 = A * cp.exp( -((X - x0)**2 + (Y - y0)**2 + (Z - z0)**2) / (2 * sigma_initial**2) )
+            
     # Kernel
+    _ = kernel(u0, alpha, kernel_array, dt, 1)
+
     start = cp.cuda.Event()
     end = cp.cuda.Event()
 
     kernel_start_event.set()
     start.record()
 
-    kernel()
+    u = kernel(u0, alpha, kernel_array, dt, num_steps)
 
     end.record()
     end.synchronize()
 
     elapsed = cp.cuda.get_elapsed_time(start, end)
+    sum_total = cp.sum(u).item()
 
-    return elapsed, 
+    return elapsed, sum_total
