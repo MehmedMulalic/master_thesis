@@ -5,7 +5,6 @@ import time
 MAX_NNZ = 4_000_000_000     # 32GB VRAM
 K_E = 8.987551786214e9      # https://en.wikipedia.org/wiki/Coulomb%27s_law
 
-#* Finished!
 def cupy_monte_carlo(args, kernel_start_event):
     """
     Monte Carlo integration of the Gaussian integral.
@@ -52,7 +51,6 @@ def cupy_monte_carlo(args, kernel_start_event):
 
     return elapsed, I_estimate
 
-#* Finished!
 def cupy_conjugate_gradient(args, kernel_start_event):
     """
     Using Conjugate Gradient to solve -d^2u/dx^2 = sin(pi * x) with zero boundary conditions
@@ -96,7 +94,6 @@ def cupy_conjugate_gradient(args, kernel_start_event):
 
     return elapsed, x
 
-#* Finished!
 def cupy_dcs(args, kernel_start_event):
     """
     Implementation of the Direct Coulomb Summation.
@@ -154,7 +151,6 @@ def cupy_dcs(args, kernel_start_event):
 
     return elapsed, sum_total
 
-#* Finished!
 def cupy_spectral(args, kernel_start_event):
     """
     Fourier Transformation.
@@ -232,7 +228,6 @@ def cupy_spectral(args, kernel_start_event):
 
     return elapsed, sum_total
 
-#* Finished!
 def cupy_spmv(args, kernel_start_event):
     """
     Calculates the sparse matrix vector multiplication y = Ax.
@@ -248,7 +243,6 @@ def cupy_spmv(args, kernel_start_event):
             x = A_csr @ x
             x = x / cp.linalg.norm(x)
 
-        cp.cuda.Stream.null.synchronize()
         return x
 
     N = 300_000
