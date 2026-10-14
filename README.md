@@ -1,0 +1,1 @@
+Make sure the Spack environment is activated before compiling by writing `spack env activate thesis-sycl`
