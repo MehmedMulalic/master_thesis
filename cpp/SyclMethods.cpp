@@ -80,7 +80,7 @@ int sycl_monte_carlo(const ParsedArgs& args) {
     std::cout << "Dimension d:        " << args.d;
 
     sycl::queue q{
-        sycl::default_selector_v,
+        sycl::gpu_selector_v,
         sycl::property_list{sycl::property::queue::enable_profiling{}}
     };
 
