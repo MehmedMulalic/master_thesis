@@ -1,8 +1,7 @@
 ThesisLog.md
 __pycache__
 .vscode/
-py/venv/
-triton/venv
+venv
 temp/
 ginkgo/
 cpp/sycl
