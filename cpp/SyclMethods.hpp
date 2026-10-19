@@ -6,6 +6,12 @@
 #include <sycl/sycl.hpp>
 #include "ParsedArgs.hpp"
 
+struct CSR {
+    int n;
+    int *row_ptr, *col;
+    float *val;
+};
+
 struct Timing {
     double cpu_miliseconds;
     double gpu_miliseconds;
@@ -25,6 +31,16 @@ inline int gpu_selector(sycl::queue q) {
     }
 }
 
+void spmv(sycl::queue& q, std::size_t N, const CSR& A, const float* x, float* y) {
+    q.parallel_for(sycl::range<1>(N), [=](sycl::id<1> id) {
+        int i = id[0];
+        float sum = 0.0f;
+        for (int k = A.row_ptr[i]; k < A.row_ptr[i+1]; ++k)
+            sum += A.val[k] * x[A.col[k]];
+        
+        y[i] = sum;
+    });
+}
 template <typename Kernel>
 Timing timed_kernel(sycl::range<3> range, Kernel kernel) {
     sycl::queue q{
