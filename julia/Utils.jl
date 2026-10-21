@@ -6,7 +6,15 @@ using Krylov
 using Random
 using ArgParse
 
-export parse_cli, julia_monte_carlo
+
+const NUM_METHOD = Dict(
+    "mc"        => "Monte Carlo",
+    "cg"        => "Conjugate Gradient",
+    "dcs"       => "Direct Coulomb Summation",
+    "spectral"  => "Spectral",
+    "spmv"      => "Sparse Matrix-Vector Multiplication",
+    "stencil"   => "Stencil",
+)
 
 function parse_cli()
     s = ArgParseSettings()
