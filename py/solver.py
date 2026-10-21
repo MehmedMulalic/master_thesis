@@ -10,17 +10,17 @@ import time
 MONITOR_INTERVAL = 0.01
 
 FRAMEWORKS = {
-    "cupy": "CuPy",
-    "numba": "Numba"
+    "cupy"  : "CuPy",
+    "numba" : "Numba"
 }
 
 NUM_METHOD = {
-    "mc": "Monte Carlo",
-    "cg": "Conjugate Gradient",
-    "dcs": "Direct Coulomb Summation",
-    "spectral": "Spectral",
-    "spmv": "Sparse Matrix-Vector Multiplication",
-    "stencil": "Stencil",
+    "mc"        : "Monte Carlo",
+    "cg"        : "Conjugate Gradient",
+    "dcs"       : "Direct Coulomb Summation",
+    "spectral"  : "Spectral",
+    "spmv"      : "Sparse Matrix-Vector Multiplication",
+    "stencil"   : "Stencil",
 }
 
 def parse_args():
@@ -127,8 +127,8 @@ def monitor(queue, stop_event, ready_event, kernel_start_event):
     handle = pynvml.nvmlDeviceGetHandleByIndex(0)
 
     queue.put({
-        "type": "gpu_stats",
-        "name": pynvml.nvmlDeviceGetName(handle),
+        "type"  : "gpu_stats",
+        "name"  : pynvml.nvmlDeviceGetName(handle),
         "driver": pynvml.nvmlSystemGetDriverVersion(),
     })
 
@@ -160,24 +160,24 @@ def monitor(queue, stop_event, ready_event, kernel_start_event):
             power_samples.append(power_mw / 1000)
             
             queue.put({
-                "type": "gpu",
-                "gpu": util.gpu,
-                "mem_used": mem.used,
-                "mem_total": mem.total
+                "type"      : "gpu",
+                "gpu"       : util.gpu,
+                "mem_used"  : mem.used,
+                "mem_total" : mem.total
             })
 
             time.sleep(MONITOR_INTERVAL)
     finally:
         if gpu_samples:
             queue.put({
-                "type": "gpu_summary",
-                "gpu_max": max(gpu_samples),
-                "gpu_avg": sum(gpu_samples) / len(gpu_samples),
-                "mem_util_max": max(mem_util_samples),
-                "mem_util_avg": sum(mem_util_samples) / len(mem_util_samples),
-                "power_max": max(power_samples),
-                "power_avg": sum(power_samples) / len(power_samples),
-                "num_samples": len(gpu_samples),
+                "type"          : "gpu_summary",
+                "gpu_max"       : max(gpu_samples),
+                "gpu_avg"       : sum(gpu_samples) / len(gpu_samples),
+                "mem_util_max"  : max(mem_util_samples),
+                "mem_util_avg"  : sum(mem_util_samples) / len(mem_util_samples),
+                "power_max"     : max(power_samples),
+                "power_avg"     : sum(power_samples) / len(power_samples),
+                "num_samples"   : len(gpu_samples),
             })
         pynvml.nvmlShutdown()
 
@@ -189,12 +189,12 @@ def workload(queue, args, kernel_start_event):
         )
 
         workload_map = {
-            "mc": cupy_monte_carlo,
-            "cg": cupy_conjugate_gradient,
-            "dcs": cupy_dcs,
-            "spectral": cupy_spectral,
-            "spmv": cupy_spmv,
-            "stencil": cupy_stencil,
+            "mc"        : cupy_monte_carlo,
+            "cg"        : cupy_conjugate_gradient,
+            "dcs"       : cupy_dcs,
+            "spectral"  : cupy_spectral,
+            "spmv"      : cupy_spmv,
+            "stencil"   : cupy_stencil,
         }
     else:
         from numba_methods import (
@@ -203,12 +203,12 @@ def workload(queue, args, kernel_start_event):
         )
 
         workload_map = {
-            "mc": numba_monte_carlo,
-            "cg": numba_conjugate_gradient,
-            "dcs": numba_dcs,
-            "spectral": numba_spectral,
-            "spmv": numba_spmv,
-            "stencil": numba_stencil,
+            "mc"        : numba_monte_carlo,
+            "cg"        : numba_conjugate_gradient,
+            "dcs"       : numba_dcs,
+            "spectral"  : numba_spectral,
+            "spmv"      : numba_spmv,
+            "stencil"   : numba_stencil,
         }
 
     implementation = workload_map[args.workload]
