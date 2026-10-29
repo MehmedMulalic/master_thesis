@@ -55,7 +55,9 @@ def cupy_monte_carlo(args, kernel_start_event):
 def cupy_conjugate_gradient(args, kernel_start_event):
     """
     Using Conjugate Gradient to solve -d^2u/dx^2 = sin(pi * x) with zero boundary conditions
-    whose exact solution is known to be u = sin(pi*x)/pi^2. Initial x is set to 0.
+    whose exact solution is known to be u = sin(pi*x)/pi^2.
+    
+    Initial x is set to 0.
     1. Build the sparse Laplacian matrix A
     2. Calculate the solution b
     3. Iterate until convergence
@@ -98,6 +100,7 @@ def cupy_conjugate_gradient(args, kernel_start_event):
 def cupy_dcs(args, kernel_start_event):
     """
     Implementation of the Direct Coulomb Summation.
+
     Defines atoms as an array of [x, y, z, q] where x, y, z are the position and q is the charge.
     1. Sample random atom values
     2. Calculate U = k_e * (Ei qi/ri)
@@ -154,9 +157,9 @@ def cupy_dcs(args, kernel_start_event):
 
 def cupy_spectral(args, kernel_start_event):
     """
-    Fourier Transformation.
-    1.
-    2.
+    Solve the 3D heat equation using a spectral method.
+    1. Transform the initial temperature field to frequency space
+    2. Evolve the frequency modes over time and transform back to the spatial domain
     """
 
     print(f"\nGrid size:          [{args.grid_size}, {args.grid_size}, {args.grid_size}]")
@@ -232,6 +235,7 @@ def cupy_spectral(args, kernel_start_event):
 def cupy_spmv(args, kernel_start_event):
     """
     Calculates the sparse matrix vector multiplication y = Ax.
+
     The kernel utilizes power iteration to increase its duration.
     """
 
@@ -289,7 +293,7 @@ def cupy_stencil(args, kernel_start_event):
     """
     Explicit 7-point stencil for the 3D heat equation.
     Assumes equal spacing in all three dimensions (dx=dy=dz). Will not work for unequal spacing.
-    
+
     Stability, for equal spacing, is defined as r = alpha*dt / spacing^2 for which, in 3D, must be r <= 1/6.
 
     The stencil is calculated by convolving the laplacian kernel.
