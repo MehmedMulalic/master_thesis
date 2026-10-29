@@ -2,10 +2,13 @@ module Utils
 
 using LinearAlgebra, SparseArrays
 using CUDA, CUDA.CUSPARSE
+using Random, Statistics
+using Printf
 using Krylov
-using Random
 using ArgParse
 
+export parse_cli, julia_monte_carlo, julia_conjugate_gradient
+export julia_dcs, julia_spectral, julia_spmv, julia_stencil
 
 const NUM_METHOD = Dict(
     "mc"        => "Monte Carlo",
@@ -112,6 +115,24 @@ function julia_monte_carlo(args, seed::Int64=0)
     return
 end
 
+function julia_conjugate_gradient()
+    println("pass")
+end
+
+function julia_dcs()
+    println("pass")
+end
+
+function julia_spectral()
+    println("pass")
+end
+
+function julia_spmv()
+    println("pass")
+end
+
+function julia_stencil()
+    println("pass")
 end
 
 end
