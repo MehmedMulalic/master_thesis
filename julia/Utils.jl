@@ -81,7 +81,15 @@ function parse_cli()
                 "Default is 200."
     end
 
-    return parse_args(s)
+    args = parse_args(s)
+
+    if args["workload"] in ["spectral", "spmv", "stencil"]
+        if isnothing(args["grid-size"]) || args["grid-size"] <= 0
+            error("Grid size must be a positive integer.")
+        end
+    end
+
+    return args
 end
 
 function julia_monte_carlo(args, seed::Int64=0)
