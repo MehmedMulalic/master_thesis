@@ -1,15 +1,15 @@
+# env -u LD_LIBRARY_PATH julia --project=. main.jl --workload X
 include("Utils.jl")
 
 using .Utils
-using LinearAlgebra, SparseArrays
-using CUDA, CUDA.CUSPARSE
-using Krylov
+using BenchmarkTools
+using CUDA
 using Random
-using ArgParse
 
 Random.seed!()
 CUDA.allowscalar(false)
 args = parse_cli()
 
-X = julia_monte_carlo(args)
-println(X)
+CUDA.@sync julia_monte_carlo(args)
+results = @benchmark CUDA.@sync(julia_monte_carlo(args)) samples=10 evals=1
+display(results)
