@@ -93,13 +93,25 @@ function parse_cli()
 end
 
 function julia_monte_carlo(args, seed::Int64=0)
+    @printf("Problem size N:    %d\n", args["N"])
+    @printf("Dimension d:       %d\n", args["d"])
+    
     if seed != 0
         Random.seed!(seed)
     end
 
-    X = CUDA.rand(Float32, (args["N"], args["d"]))
+    # Random array with bounds [-bound, bound),
+    # defined as lb + (up - lb) * A
+    X = -args["bound"] .+ (2*args["bound"]) .* CUDA.rand(Float32, (args["N"], args["d"]))
+    sq_norms = sum(X.^2, dims=2)
+    f_vals = exp.(-sq_norms)
+    
+    volume = (2*args["bound"])^args["d"]
+    I_estimate = volume * mean(f_vals)
 
-    return X
+    return
+end
+
 end
 
 end
