@@ -133,8 +133,27 @@ Initial x is set to 0.
 2. Calculate the solution b
 3. Iterate until convergence
 """
-function julia_conjugate_gradient()
-    println("pass")
+function julia_conjugate_gradient(args)
+    @printf("Problem size N:            %d\n", args["N"])
+    @printf("Maximum iteration count:   %d\n", args["maxiter"])
+
+    h = 1f0 / (args[N] + 1)
+    main_diag = fill(2f0, args[N]) #? treba li ovo biti random a ne samo 2? jel 2 samo ono user-defined?
+    off_diag = fill(-1f0, args[N]-1)
+    A = spdiagm(-1 => off_diag, 0 => main_diag, 1 => off_diag)
+    A = A ./ (h^2)
+
+    grid = range(0, 1, length=args["N"]+2)[2:end-1]
+    u = sin.(pi .* grid)
+    b = A * u
+
+    devA = CUDA.CuSparseMatrixCSR(A)
+    devb = CuArray(b)
+    _ = Krylov.cg(devA, devb; rtol=1f-10, itmax=args["maxiter"])
+
+    x, stats = Krylov.cg(devA, devb; rtol=1f-10, itmax=args["maxiter"])
+
+    return
 end
 
 """
@@ -144,8 +163,9 @@ Defines atoms as an array of [x, y, z, q] where x, y, z are the position and q i
 1. Sample random atom values
 2. Calculate U = k_e * (Ei qi/ri)
 """
-function julia_dcs()
-    println("pass")
+function julia_dcs(args)
+    @printf("Grid size:              [%d, %d, %d]", args[grid-size], args[grid-size], args[grid-size])
+    @printf("Amount of particles:    %d", args["particle-count"])
 end
 
 """
@@ -153,8 +173,8 @@ Solve the 3D heat equation using a spectral method.
 1. Transform the initial temperature field to frequency space
 2. Evolve the frequency modes over time and transform back to the spatial domain
 """
-function julia_spectral()
-    println("pass")
+function julia_spectral(args)
+    @printf("Grid size:              [%d, %d, %d]", args[grid-size], args[grid-size], args[grid-size])
 end
 
 """
@@ -162,8 +182,8 @@ Calculates the sparse matrix vector multiplication y = Ax.
 
 The kernel utilizes power iteration to increase its duration.
 """
-function julia_spmv()
-    println("pass")
+function julia_spmv(args)
+    @printf("Amount of iterations:       %d", args["iterations"])
 end
 
 """
@@ -175,7 +195,7 @@ Stability, for equal spacing, is defined as r = alpha*dt / spacing^2 for which, 
 The stencil is calculated by convolving the laplacian kernel.
 Uses the 'reflect' mode as per defined Neumann boundary condition.
 """
-function julia_stencil()
+function julia_stencil(args)
     println("pass")
 end
 
