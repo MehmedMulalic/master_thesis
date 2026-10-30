@@ -189,7 +189,7 @@ def cupy_spectral(args, kernel_start_event):
     dz = Lz / (nz - 1)              # z spacing
     dt = 0.0003                     # Time step (s)
     t_final = 60                    # Final time step (s)
-    num_steps = int(t_final / dt)
+    num_steps = round(t_final / dt)
 
     x = cp.linspace(0.0, Lx, nx)
     y = cp.linspace(0.0, Ly, ny)
