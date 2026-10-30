@@ -10,6 +10,13 @@ Random.seed!()
 CUDA.allowscalar(false)
 args = parse_cli()
 
+# warm up runs
 CUDA.@sync julia_monte_carlo(args)
-results = @benchmark CUDA.@sync(julia_monte_carlo(args)) samples=10 evals=1
+CUDA.@sync julia_conjugate_gradient(args)
+
+results = @benchmark CUDA.@sync(julia_monte_carlo($args)) samples=10 evals=1
+CUDA.synchronize()
+profile = CUDA.@profile julia_monte_carlo(args)
+
 display(results)
+display(profile)
