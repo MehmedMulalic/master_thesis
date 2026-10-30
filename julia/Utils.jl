@@ -10,15 +10,6 @@ using ArgParse
 export parse_cli, julia_monte_carlo, julia_conjugate_gradient
 export julia_dcs, julia_spectral, julia_spmv, julia_stencil
 
-const NUM_METHOD = Dict(
-    "mc"        => "Monte Carlo",
-    "cg"        => "Conjugate Gradient",
-    "dcs"       => "Direct Coulomb Summation",
-    "spectral"  => "Spectral",
-    "spmv"      => "Sparse Matrix-Vector Multiplication",
-    "stencil"   => "Stencil",
-)
-
 function parse_cli()
     s = ArgParseSettings()
 

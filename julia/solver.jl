@@ -6,6 +6,15 @@ using BenchmarkTools
 using CUDA
 using Random
 
+const NUM_METHOD = Dict(
+    "mc"        => "Monte Carlo",
+    "cg"        => "Conjugate Gradient",
+    "dcs"       => "Direct Coulomb Summation",
+    "spectral"  => "Spectral",
+    "spmv"      => "Sparse Matrix-Vector Multiplication",
+    "stencil"   => "Stencil",
+)
+
 Random.seed!()
 CUDA.allowscalar(false)
 args = parse_cli()
