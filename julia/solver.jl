@@ -1,7 +1,7 @@
 # env -u LD_LIBRARY_PATH julia --project=. main.jl --workload X
-include("Utils.jl")
+include("JuliaMethods.jl")
 
-using .Utils
+using .JuliaMethods
 using BenchmarkTools
 using CUDA
 using Random

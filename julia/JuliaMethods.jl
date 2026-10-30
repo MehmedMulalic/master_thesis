@@ -1,4 +1,4 @@
-module Utils
+module JuliaMethods
 
 using LinearAlgebra, SparseArrays
 using CUDA, CUDA.CUSPARSE
