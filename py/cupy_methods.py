@@ -1,6 +1,5 @@
 import cupy as cp
 import numpy as np
-import time
 import StabilityException
 
 MAX_NNZ = 4_000_000_000     # 32GB VRAM
@@ -252,7 +251,7 @@ def cupy_spmv(args, kernel_start_event):
 
     N = 300_000
     density = 0.01
-    nnz = int(N * N * density)
+    nnz = round(N * N * density)
     if nnz > MAX_NNZ:
         raise ValueError(
             f"Requested matrix would contain {nnz:,} nonzeros.\n"
@@ -320,7 +319,7 @@ def cupy_stencil(args, kernel_start_event):
     dx = Lx / (nx - 1)              # x spacing (we assume dx=dy=dz in this case)
     dt = 0.0003                     # Time step (s)
     t_final = 60                    # Final time step (s)
-    num_steps = int(t_final / dt)
+    num_steps = round(t_final / dt)
 
     # Stability
     r = alpha * dt / dx**2          # Holds only if equal spacing dx=dy=dz
