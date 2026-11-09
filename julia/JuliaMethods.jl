@@ -2,7 +2,7 @@ module JuliaMethods
 
 using LinearAlgebra, SparseArrays
 using CUDA, CUDA.CUSPARSE
-using Random, Statistics
+using Statistics
 using Printf
 using Krylov
 using FFTW
@@ -26,7 +26,7 @@ function julia_monte_carlo(args, seed::Int64=0)
     @printf("Dimension d:       %d\n", args["d"])
     
     if seed != 0
-        Random.seed!(seed)
+        CUDA.seed!(seed)
     end
 
     # Random array with bounds [-bound, bound),
