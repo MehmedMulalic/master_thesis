@@ -5,9 +5,12 @@ using CUDA, CUDA.CUSPARSE
 using Random, Statistics
 using Printf
 using Krylov
+using FFTW
 
 export julia_monte_carlo, julia_conjugate_gradient, julia_dcs
 export julia_spectral, julia_spmv, julia_stencil
+
+const TypeAlias = Float32
 
 """
 Monte Carlo integration of the Gaussian integral.
@@ -28,7 +31,7 @@ function julia_monte_carlo(args, seed::Int64=0)
 
     # Random array with bounds [-bound, bound),
     # defined as lb + (up - lb) * A
-    X = -args["bound"] .+ (2*args["bound"]) .* CUDA.rand(Float32, (args["N"], args["d"]))
+    X = -args["bound"] .+ (2*args["bound"]) .* CUDA.rand(TypeAlias, (args["N"], args["d"]))
     sq_norms = sum(X.^2, dims=2)
     f_vals = exp.(-sq_norms)
     
@@ -89,6 +92,74 @@ Solve the 3D heat equation using a spectral method.
 """
 function julia_spectral(args)
     @printf("Grid size:              [%d, %d, %d]", args[grid-size], args[grid-size], args[grid-size])
+
+    function kernel(u0, alpha, k_squared, dt, num_steps)
+        u_hat = dct(u0, (1, 2, 3))
+        evolution_operator = exp.(alpha .* k_squared .* dt)
+
+        for _ in 1:num_steps
+            u_hat .*= evolution_operator
+        end
+        
+        u_final = idct(u_hat, (1, 2, 3))
+        return real.(u_final)
+    end
+
+    A = 100f0                       # Peak temperature (°C)
+    sigma_initial = 0f2             # Initial width (m)
+    alpha = 1.6563f-4               # Thermal diffusivity of pure silver (99.9%) (m^2/s)
+
+    x0 = y0 = z0 = 0f5              # Center
+    Lx = Ly = Lz = 1f0              # Domain limit (metres)
+    nx = ny = nz = args.grid_size
+
+    dx = Lx / (nx - 1)              # x spacing
+    dy = Ly / (ny - 1)              # y spacing
+    dz = Lz / (nz - 1)              # z spacing
+    dt = 3f-4                       # Time step (s)
+    t_final = 60                    # Final time step (s)
+    num_steps = round(Int32, t_final / dt)
+
+    devx = CuArray{TypeAlias}(undef, nx)
+    devy = CuArray{TypeAlias}(undef, ny)
+    devz = CuArray{TypeAlias}(undef, nz)
+    devx .= range(0f0, Lx, nx)
+    devy .= range(0f0, Ly, ny)
+    devz .= range(0f0, Lz, nz)
+    
+    # NumPy's meshgrid equates to Julia's reshaping which is
+    # automatically broadcasted during u0 and frequency grid calculations.
+    X = reshape(devx, :, 1, 1)
+    Y = reshape(devy, 1, :, 1)
+    Z = reshape(devz, 1, 1, :)
+
+    # Initial condition (Gaussian bump)
+    u0 = A .* exp.(
+        -(
+            (X .- x0).^2 .+
+            (Y .- y0).^2 .+
+            (Z .- z0).^2
+        ) ./ (2 * sigma_initial^2)
+    )
+    N = size(u0, 1)
+
+    # Frequency grid
+    kx = pi .* (0:N-1) ./ N
+    ky = pi .* (0:N-1) ./ N
+    kz = pi .* (0:N-1) ./ N
+
+    KX = reshape(kx, :, 1, 1)
+    KY = reshape(ky, 1, :, 1)
+    KZ = reshape(kz, 1, 1, :)
+    
+    # Eigenvalues for Neumann BC
+    k_squared = (
+        2 .* (cos.(KX) .- 1) ./ dx^2 .+
+        2 .* (cos.(KY) .- 1) ./ dy^2 .+
+        2 .* (cos.(KZ) .- 1) ./ dz^2
+    )
+    
+    return
 end
 
 """
