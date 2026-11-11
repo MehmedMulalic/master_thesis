@@ -11,6 +11,7 @@ export julia_monte_carlo, julia_conjugate_gradient, julia_dcs
 export julia_spectral, julia_spmv, julia_stencil
 
 const TypeAlias = Float32
+const MAX_NNZ = 4_000_000_000   # 32GB VRAM
 
 """
 Monte Carlo integration of the Gaussian integral.
@@ -169,6 +170,27 @@ The kernel utilizes power iteration to increase its duration.
 """
 function julia_spmv(args)
     @printf("Amount of iterations:       %d", args["iterations"])
+
+    N = 300_000
+    density = 0f01
+    nnz = round(Int, N * N * density)
+    if nnz > MAX_NNZ:
+        throw(error(
+            "Requested matrix would contain $nnz nonzeros." *
+            "Maximum allowed is $MAX_NNZ."
+        ))
+
+    CUDA.seed!(42)
+
+    A = sprand(Float32, N, N, density)
+    devA = CuSparseMatrixCSR(A)
+
+    rows = CUDA.rand(Int32(0):Int32(N-1))
+    cols = CUDA.rand(Int32(0):Int32(N-1))
+    vals = cp.random.rand(nnz, dtype=cp.float32)
+
+    A = csp.coo_matrix((vals, (rows, cols)), shape=(N, N)).tocsr()
+    x = cp.random.rand(N, dtype=cp.float32)
 end
 
 """
