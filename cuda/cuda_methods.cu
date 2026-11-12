@@ -31,13 +31,18 @@
     }                                                                          \
 }
 
-// __global__ void cuda_dcs(float *x) {
-//     return;
-// }
+int cuda_monte_carlo() {
+    return 0;
+}
 
-// __global__ void cuda_stencil(float *x) {
-//     return;
-// }
+int cuda_conjugate_gradient() {
+    return 0;
+}
+
+int cuda_dcs() {
+    return 0;
+}
+
 
 int cuda_spmv() {
     const int64_t A_num_rows = 4;
@@ -109,6 +114,10 @@ int cuda_spmv() {
     CHECK_CUDA(cudaFree(dA_values));
     CHECK_CUDA(cudaFree(dA_indptr));
     CHECK_CUDA(cudaFree(dA_indices));
+    return 0;
+}
+
+int cuda_stencil() {
     return 0;
 }
 
