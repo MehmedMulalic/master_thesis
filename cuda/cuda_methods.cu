@@ -39,9 +39,7 @@
 //     return;
 // }
 
-
-/* CUSPARSE */
-int main() {
+int cuda_spmv() {
     const int64_t A_num_rows = 4;
     const int64_t A_num_cols = 4;
     const int64_t A_nnz = 9;
@@ -111,5 +109,10 @@ int main() {
     CHECK_CUDA(cudaFree(dA_values));
     CHECK_CUDA(cudaFree(dA_indptr));
     CHECK_CUDA(cudaFree(dA_indices));
+    return 0;
+}
+
+int main() {
+    cuda_spmv();
     return EXIT_SUCCESS;
 }
