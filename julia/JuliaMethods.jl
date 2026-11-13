@@ -56,8 +56,8 @@ function julia_conjugate_gradient(args)
     @printf("Maximum iteration count:   %d\n", args["maxiter"])
 
     h = 1f0 / (args["N"] + 1)
-    main_diag = fill(2f0, args[N]) #? treba li ovo biti random a ne samo 2? jel 2 samo ono user-defined?
-    off_diag = fill(-1f0, args[N]-1)
+    main_diag = fill(2f0, args["N"]) #? treba li ovo biti random a ne samo 2? jel 2 samo ono user-defined?
+    off_diag = fill(-1f0, args["N"]-1)
     A = spdiagm(-1 => off_diag, 0 => main_diag, 1 => off_diag)
     A = A ./ (h^2)
 
@@ -67,9 +67,9 @@ function julia_conjugate_gradient(args)
 
     devA = CUDA.CuSparseMatrixCSR(A)
     devb = CuArray(b)
-    _ = Krylov.cg(devA, devb; rtol=1f-10, itmax=args["maxiter"])
+    _ = Krylov.cg(devA, devb; rtol=1e-10, itmax=args["maxiter"])
 
-    x, stats = Krylov.cg(devA, devb; rtol=1f-10, itmax=args["maxiter"])
+    x, stats = Krylov.cg(devA, devb; rtol=1e-10, itmax=args["maxiter"])
 
     return
 end
@@ -82,8 +82,8 @@ Defines atoms as an array of [x, y, z, q] where x, y, z are the position and q i
 2. Calculate U = k_e * (Ei qi/ri)
 """
 function julia_dcs(args)
-    @printf("Grid size:              [%d, %d, %d]", args[grid-size], args[grid-size], args[grid-size])
-    @printf("Amount of particles:    %d", args["particle-count"])
+    @printf("Grid size:              [%d, %d, %d]\n", args[grid-size], args[grid-size], args[grid-size])
+    @printf("Amount of particles:    %d\n", args["particle-count"])
 end
 
 """
@@ -92,7 +92,7 @@ Solve the 3D heat equation using a spectral method.
 2. Evolve the frequency modes over time and transform back to the spatial domain
 """
 function julia_spectral(args)
-    @printf("Grid size:              [%d, %d, %d]", args[grid-size], args[grid-size], args[grid-size])
+    @printf("Grid size:              [%d, %d, %d]\n", args["grid-size"], args["grid-size"], args["grid-size"])
 
     function kernel(u0, alpha, k_squared, dt, num_steps)
         u_hat = dct(u0, (1, 2, 3))
@@ -112,7 +112,7 @@ function julia_spectral(args)
 
     x0 = y0 = z0 = 0f5              # Center
     Lx = Ly = Lz = 1f0              # Domain limit (metres)
-    nx = ny = nz = args.grid_size
+    nx = ny = nz = args["grid-size"]
 
     dx = Lx / (nx - 1)              # x spacing
     dy = Ly / (ny - 1)              # y spacing
