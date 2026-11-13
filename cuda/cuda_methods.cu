@@ -210,6 +210,6 @@ int cuda_stencil() {
 }
 
 int main() {
-    cuda_spmv();
+    cuda_spectral();
     return EXIT_SUCCESS;
 }
