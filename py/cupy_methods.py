@@ -79,7 +79,7 @@ def cupy_conjugate_gradient(args, kernel_start_event):
     b = A @ u
 
     # Kernel
-    _ = cg(A, b, rtol=1e-10, maxiters=args.maxiter)
+    _ = cg(A, b, rtol=1e-10, maxiter=args.maxiter)
 
     start = cp.cuda.Event()
     end = cp.cuda.Event()
