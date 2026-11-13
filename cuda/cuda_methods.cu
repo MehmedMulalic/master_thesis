@@ -8,8 +8,10 @@
 
 #include <cuda_runtime.h>
 #include <cusparse.h>
+#include <cufft.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <vector>
 
 #define CHECK_CUDA(func)                                                       \
 {                                                                              \
@@ -31,6 +33,25 @@
     }                                                                          \
 }
 
+#define CHECK_CUFFT(func)                                                   \
+{                                                                              \
+    cufftResult_t status = (func);                                          \
+    if (status != CUFFT_SUCCESS) {                                   \
+        printf("CUFFT API failed at line %d with error code: %d\n",         \
+               __LINE__, status);              \
+        return EXIT_FAILURE;                                                   \
+    }                                                                          \
+}
+
+__global__ void scaling_kernel(cufftComplex* data, int element_count, float scale) {
+    const int tid = threadIdx.x + blockIdx.x * blockDim.x;
+    const int stride = blockDim.x * gridDim.x;
+    for (auto i = tid; i<element_count; i+= stride) {
+        data[i].x *= scale;
+        data[i].y *= scale;
+    }
+}
+
 int cuda_monte_carlo() {
     return 0;
 }
@@ -43,6 +64,73 @@ int cuda_dcs() {
     return 0;
 }
 
+/* NOTES
+* potrebno je znati malo vise teorije zbog mallo
+* generalno treba error checking jer su async funkcije,
+* nesto sto dodje vec uz cupy
+* oboje su generalno sitnice
+*/
+int cuda_spectral() {
+    // const float A = 100.0f;               // Peak temperature (°C)
+    // const float sigma_initial = 0.2f;     // Initial width (m)
+    // const float alpha = 1.6563e-4;        // Thermal diffusivity of pure silver (99.9%) (m^2/s)
+
+    // x0 = y0 = z0 = 0.5f              // Center
+    // Lx = Ly = Lz = 1.0f              // Domain limit (metres)
+    // nx = ny = nz = args.grid_size
+
+    // dx = Lx / (nx - 1)              // x spacing
+    // dy = Ly / (ny - 1)              // y spacing
+    // dz = Lz / (nz - 1)              // z spacing
+    // dt = 0.0003f                     // Time step (s)
+    // t_final = 60                    // Final time step (s)
+    // num_steps = round(t_final / dt)
+
+    cufftHandle planR2C, planC2R;
+    
+    int fft_size = 10;
+    int batch_size = 1;
+    int element_count = batch_size * fft_size;
+    
+    std::vector<cufftReal> input = {
+            0.37454012f, 0.95071431f, 0.73199394f, 0.59865848f, 0.15601864f,
+            0.15599452f, 0.05808361f, 0.86617615f, 0.60111501f, 0.70807258f
+        };
+    std::vector<cufftReal> output(element_count, 0);
+
+    // Sanity check
+    for (auto v: input) {
+        printf("%f, ", v);
+    }
+    printf("\n");
+
+    cufftReal *d_input;
+    cufftComplex *d_output;
+    
+    CHECK_CUFFT(cufftPlan1d(&planR2C, fft_size, CUFFT_R2C, batch_size));
+    CHECK_CUFFT(cufftPlan1d(&planC2R, fft_size, CUFFT_C2R, batch_size));
+
+    CHECK_CUDA(cudaMalloc((void**) &d_input, sizeof(cufftReal) * input.size()));
+    CHECK_CUDA(cudaMalloc((void**) &d_output, sizeof(cufftComplex) * output.size()));
+
+    // Forward FFT
+    CHECK_CUDA(cudaMemcpy(d_input, input.data(), sizeof(cufftReal) * input.size(), cudaMemcpyHostToDevice));
+    CHECK_CUFFT(cufftExecR2C(planR2C, d_input, d_output));
+
+    // Inverse FFT
+    CHECK_CUFFT(cufftExecC2R(planC2R, d_output, d_input));
+    CHECK_CUDA(cudaMemcpy(output.data(), d_input, sizeof(cufftReal) * output.size(), cudaMemcpyDeviceToHost));
+
+    // Display results
+    for (auto v: output) {
+        printf("%f, ", v);
+    }
+    printf("\n");
+
+    CHECK_CUFFT(cufftDestroy(planR2C));
+    CHECK_CUFFT(cufftDestroy(planC2R));
+    return 0;
+}
 
 int cuda_spmv() {
     const int64_t A_num_rows = 4;
