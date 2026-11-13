@@ -301,6 +301,8 @@ def cupy_stencil(args, kernel_start_event):
 
     from cupyx.scipy.ndimage import convolve
 
+    print(f"\nGrid size:              [{args.grid_size}, {args.grid_size}, {args.grid_size}]")
+
     def kernel(u0, alpha, kernel_array, dt, num_steps):
         for _ in range(num_steps):
             laplacian = convolve(u0, kernel_array)
