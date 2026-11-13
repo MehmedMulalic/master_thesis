@@ -1,4 +1,4 @@
-# env -u LD_LIBRARY_PATH julia --project=. main.jl --workload X
+# env -u LD_LIBRARY_PATH julia --project=. solver.jl --workload X
 include("JuliaMethods.jl")
 
 using .JuliaMethods
@@ -94,7 +94,7 @@ function parse_cli()
 
     args = parse_args(s)
 
-    if args["workload"] in ["spectral", "spmv", "stencil"]
+    if args["workload"] in ["dcs", "spectral", "stencil"]
         if isnothing(args["grid-size"]) || args["grid-size"] <= 0
             error("Grid size must be a positive integer.")
         end
@@ -108,14 +108,14 @@ CUDA.allowscalar(false)
 args = parse_cli()
 
 implementation = workload_map[args["workload"]]
-
+implementation(args)
 # warm up runs
-CUDA.@sync implementation(args)
-_ = @benchmark CUDA.@sync(implementation($args)) samples=SAMPLES evals=1
+# CUDA.@sync implementation(args)
+# _ = @benchmark CUDA.@sync(implementation($args)) samples=SAMPLES evals=1
 
-results = @benchmark CUDA.@sync(implementation($args)) samples=SAMPLES evals=1
-CUDA.synchronize()
-profile = CUDA.@profile implementation(args)
+# results = @benchmark CUDA.@sync(implementation($args)) samples=SAMPLES evals=1
+# CUDA.synchronize()
+# profile = CUDA.@profile implementation(args)
 
-display(results)
-display(profile)
+# display(results)
+# display(profile)
