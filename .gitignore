@@ -1,8 +1,7 @@
-ThesisLog.md
 __pycache__
-.vscode/
-venv
-temp/
-ginkgo/
-cpp/sycl
 Thesis.code-workspace
+ThesisLog.md
+.vscode/
+venv/
+temp/
+build/
