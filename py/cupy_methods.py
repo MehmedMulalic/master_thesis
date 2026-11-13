@@ -166,13 +166,13 @@ def cupy_spectral(args, kernel_start_event):
     from cupyx.scipy.fft import dctn, idctn
 
     def kernel(u0, alpha, k_squared, dt, num_steps):
-        u_hat = dctn(u0, norm='ortho')
+        u_hat = dctn(u0)
         evolution_operator = cp.exp(alpha * k_squared * dt)
         
         for _ in range(num_steps):
             u_hat = cp.multiply(u_hat, evolution_operator, out=u_hat)
         
-        u_final = idctn(u_hat, norm='ortho').real
+        u_final = idctn(u_hat).real
         return u_final
 
     A = 100.0                       # Peak temperature (°C)
