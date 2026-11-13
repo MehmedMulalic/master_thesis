@@ -116,7 +116,7 @@ def parse_args():
 
     args = parser.parse_args()
 
-    if args.workload in ("spectral", "spmv", "stencil"):
+    if args.workload in ("dcs", "spectral", "stencil"):
         if args.grid_size is None or args.grid_size <= 0:
             parser.error("Grid size must be a positive integer")
 
