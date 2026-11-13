@@ -55,7 +55,7 @@ function julia_conjugate_gradient(args)
     @printf("Problem size N:            %d\n", args["N"])
     @printf("Maximum iteration count:   %d\n", args["maxiter"])
 
-    h = 1f0 / (args[N] + 1)
+    h = 1f0 / (args["N"] + 1)
     main_diag = fill(2f0, args[N]) #? treba li ovo biti random a ne samo 2? jel 2 samo ono user-defined?
     off_diag = fill(-1f0, args[N]-1)
     A = spdiagm(-1 => off_diag, 0 => main_diag, 1 => off_diag)
@@ -174,11 +174,12 @@ function julia_spmv(args)
     N = 300_000
     density = 0f01
     nnz = round(Int, N * N * density)
-    if nnz > MAX_NNZ:
+    if nnz > MAX_NNZ
         throw(error(
             "Requested matrix would contain $nnz nonzeros." *
             "Maximum allowed is $MAX_NNZ."
         ))
+    end
 
     CUDA.seed!(42)
 
