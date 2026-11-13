@@ -169,10 +169,10 @@ Calculates the sparse matrix vector multiplication y = Ax.
 The kernel utilizes power iteration to increase its duration.
 """
 function julia_spmv(args)
-    @printf("Amount of iterations:       %d", args["iterations"])
+    @printf("Amount of iterations:       %d\n", args["iterations"])
 
     N = 300_000
-    density = 0f01
+    density = 0.001f0
     nnz = round(Int, N * N * density)
     if nnz > MAX_NNZ
         throw(error(
@@ -183,15 +183,12 @@ function julia_spmv(args)
 
     CUDA.seed!(42)
 
+    x = CUDA.rand(Float32, N)
     A = sprand(Float32, N, N, density)
-    devA = CuSparseMatrixCSR(A)
+    dA = CuSparseMatrixCSR(A)
 
-    rows = CUDA.rand(Int32(0):Int32(N-1))
-    cols = CUDA.rand(Int32(0):Int32(N-1))
-    vals = cp.random.rand(nnz, dtype=cp.float32)
-
-    A = csp.coo_matrix((vals, (rows, cols)), shape=(N, N)).tocsr()
-    x = cp.random.rand(N, dtype=cp.float32)
+    _ = dA * x
+    y = dA * x
 end
 
 """
