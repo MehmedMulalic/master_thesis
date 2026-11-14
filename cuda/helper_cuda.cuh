@@ -6,6 +6,13 @@
 
 #pragma once
 
+#define CHECK_CUDA_KERNEL()                                                    \
+{                                                                              \
+    cudaError_t err = cudaGetLastError();                                      \
+    if (err != cudaSuccess)                                                    \
+    printf("Launch error: %s\n", cudaGetErrorString(err));                     \
+}                                                                              \
+
 #define CHECK_CUDA(func)                                                       \
 {                                                                              \
     cudaError_t status = (func);                                               \
@@ -38,11 +45,10 @@
 
 #endif
 
-__global__ void scaling_kernel(cufftComplex* data, int element_count, float scale) {
+__global__ void scaling_kernel(float* data, int element_count, float scale) {
     const int tid = threadIdx.x + blockIdx.x * blockDim.x;
     const int stride = blockDim.x * gridDim.x;
-    for (auto i = tid; i<element_count; i+= stride) {
-        data[i].x *= scale;
-        data[i].y *= scale;
+    for (auto i = tid; i < element_count; i += stride) {
+        data[i] *= scale;
     }
 }

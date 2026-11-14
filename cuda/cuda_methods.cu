@@ -79,8 +79,12 @@ int cuda_spectral() {
     CHECK_CUDA(cudaMemcpy(d_input, input.data(), sizeof(cufftReal) * input.size(), cudaMemcpyHostToDevice));
     CHECK_CUFFT(cufftExecR2C(planR2C, d_input, d_output));
 
-    // Inverse FFT
+    // Inverse FFT (backwards normalization)
     CHECK_CUFFT(cufftExecC2R(planC2R, d_output, d_input));
+    
+    scaling_kernel<<<1, 10>>>(d_input, element_count, 1/element_count);
+    CHECK_CUDA_KERNEL();
+
     CHECK_CUDA(cudaMemcpy(output.data(), d_input, sizeof(cufftReal) * output.size(), cudaMemcpyDeviceToHost));
 
     // Display results
