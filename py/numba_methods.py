@@ -7,7 +7,7 @@ import math
 MAX_NNZ = 4_000_000_000     # 32GB VRAM
 K_E = 8.987551786214e9      # https://en.wikipedia.org/wiki/Coulomb%27s_law
 
-def numba_monte_carlo(args):
+def numba_monte_carlo(args, kernel_start_event):
     """
     Monte Carlo integration of the Gaussian integral.
     The theoretical value should converge to pi ** (d / 2) as N approaches infinity.
@@ -41,17 +41,33 @@ def numba_monte_carlo(args):
             acc += math.exp(-sq)
         cuda.atomic.add(total, 0, acc)
 
+    rng_states = create_xoroshiro128p_states(n_threads, seed=42)
+    f_vals_sum = cuda.to_device(np.zeros(1, dtype=np.float32))
+
+    # Kernel
     bpg = 1
     tpb = 32
     n_threads = bpg * tpb
 
-    rng_states = create_xoroshiro128p_states(n_threads, seed=42)
-    f_vals_sum = cuda.to_device(np.zeros(1))
     kernel[bpg, tpb](rng_states, f_vals_sum)
+    f_vals_sum = cuda.to_device(np.zeros(1, dtype=np.float32))
 
+    start = cuda.event()
+    end = cuda.event()
+
+    kernel_start_event.set()
+    start.record()
+
+    kernel[bpg, tpb](rng_states, f_vals_sum)
     volume = (2 * args.bound) ** args.d
     I_estimate = volume * f_vals_sum.copy_to_host() / args.N
-    return I_estimate
+
+    end.record()
+    end.synchronize()
+
+    elapsed = cuda.event_elapsed_time(start, end)
+
+    return elapsed, I_estimate
     
 def numba_conjugate_gradient(args):
     """
