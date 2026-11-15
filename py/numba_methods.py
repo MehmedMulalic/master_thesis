@@ -2,32 +2,66 @@ from numba import cuda
 from pathlib import Path
 import numpy as np
 import time
+import math
+
+MAX_NNZ = 4_000_000_000     # 32GB VRAM
+K_E = 8.987551786214e9      # https://en.wikipedia.org/wiki/Coulomb%27s_law
 
 def numba_monte_carlo(args):
     """
     Monte Carlo integration of the Gaussian integral.
-    The theoretical value should converge to pi^(d/2) as N and d approach infinity.
+    The theoretical value should converge to pi ** (d / 2) as N approaches infinity.
+
+    1. Draw samples
+    2. Normalization
+    3. Evaluate f(x_i)
+    4. MC estimator through the following steps:
+        - atomic reduction of the sum of f(x_i),
+        - D2H transfer of the sum
+        - dividing by N on the host to get the mean
     """
-    from numba.cuda.random import create_xoroshiro128p_states, xoroshiro128p_uniform_float32
+    from numba.cuda.random import (
+        create_xoroshiro128p_states,
+        xoroshiro128p_uniform_float32
+    )
 
     @cuda.jit
-    def kernel(rng_states, output):
-        i = cuda.grid(1)
+    def kernel(rng_states, total):
+        tid = cuda.grid(1)
+        acc = 0.0
+        for _ in range(tid, args.N, cuda.gridsize(1)):
+            sq = 0.0
+            for _ in range(d):
+                # Bound from [-bound, bound)
+                # defined as x * (up - lb) + lb
+                x = xoroshiro128p_uniform_float32(rng_states, tid)
+                x = x * (2 * args.bound) - args.bound
+                sq += x * x
 
-        if i < output.size:
-            x = xoroshiro128p_uniform_float32(rng_states, i)
-            output[i] = x
+            acc += math.exp(-sq)
+        cuda.atomic.add(total, 0, acc)
 
-    #! args nek ima optional bound default 6, mandatory N & d
-    X = np.random.uniform(-args.bound, args.bound, size=(args.N, args.d), dtype=np.float32)
-    f_vals = np.exp(-np.sum(X**2, axis=1))
+    bpg = 1
+    tpb = 32
+    n_threads = bpg * tpb
+
+    rng_states = create_xoroshiro128p_states(n_threads, seed=42)
+    f_vals_sum = cuda.to_device(np.zeros(1))
+    kernel[bpg, tpb](rng_states, f_vals_sum)
+
     volume = (2 * args.bound) ** args.d
-
-    I_estimate = volume * np.mean(f_vals)
+    I_estimate = volume * f_vals_sum.copy_to_host() / args.N
+    return I_estimate
     
 def numba_conjugate_gradient(args):
     """
-
+    Using Conjugate Gradient to solve -d^2u/dx^2 = sin(pi * x) with zero boundary conditions
+    whose exact solution is known to be u = sin(pi*x)/pi^2.
+    
+    Initial x is set to 0.
+    1. Build the sparse Laplacian matrix A
+    2. Calculate the solution b
+    3. Iterate until convergence
     """
     @cuda.jit
     def kernel():
@@ -37,7 +71,11 @@ def numba_conjugate_gradient(args):
 
 def numba_dcs(args):
     """
+    Implementation of the Direct Coulomb Summation.
 
+    Defines atoms as an array of [x, y, z, q] where x, y, z are the position and q is the charge.
+    1. Sample random atom values
+    2. Calculate U = k_e * (Ei qi/ri)
     """
     @cuda.jit
     def kernel():
@@ -47,7 +85,9 @@ def numba_dcs(args):
 
 def numba_spectral(args):
     """
-
+    Solve the 3D heat equation using a spectral method.
+    1. Transform the initial temperature field to frequency space
+    2. Evolve the frequency modes over time and transform back to the spatial domain
     """
     @cuda.jit
     def kernel():
@@ -58,6 +98,8 @@ def numba_spectral(args):
 def numba_spmv(args):
     """
     Calculates the sparse matrix vector multiplication y = Ax.
+
+    The kernel utilizes power iteration to increase its duration.
     """
 
     @cuda.jit
@@ -71,7 +113,13 @@ def numba_spmv(args):
 
 def numba_stencil(args):
     """
+    Explicit 7-point stencil for the 3D heat equation.
+    Assumes equal spacing in all three dimensions (dx=dy=dz). Will not work for unequal spacing.
 
+    Stability, for equal spacing, is defined as r = alpha*dt / spacing^2 for which, in 3D, must be r <= 1/6.
+
+    The stencil is calculated by convolving the laplacian kernel.
+    Uses the 'reflect' mode as per defined Neumann boundary condition.
     """
     @cuda.jit
     def kernel(u, u_step, alpha, dx, dy, grid_size, dt):
