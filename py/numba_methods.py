@@ -27,16 +27,16 @@ def numba_monte_carlo(args, kernel_start_event):
     )
 
     @cuda.jit
-    def kernel(rng_states, total):
+    def kernel(rng_states, bound, N, total):
         tid = cuda.grid(1)
         acc = 0.0
-        for _ in range(tid, args.N, cuda.gridsize(1)):
+        for _ in range(tid, N, cuda.gridsize(1)):
             sq = 0.0
             for _ in range(d):
                 # Bound from [-bound, bound)
                 # defined as x * (up - lb) + lb
                 x = xoroshiro128p_uniform_float32(rng_states, tid)
-                x = x * (2 * args.bound) - args.bound
+                x = x * (2 * bound) - bound
                 sq += x * x
 
             acc += math.exp(-sq)
@@ -50,7 +50,8 @@ def numba_monte_carlo(args, kernel_start_event):
     tpb = 32
     n_threads = bpg * tpb
 
-    kernel[bpg, tpb](rng_states, f_vals_sum)
+    # Warm up
+    kernel[bpg, tpb](rng_states, args.bound, args.N, f_vals_sum)
     f_vals_sum = cuda.to_device(np.zeros(1, dtype=np.float32))
 
     start = cuda.event()
@@ -59,7 +60,7 @@ def numba_monte_carlo(args, kernel_start_event):
     kernel_start_event.set()
     start.record()
 
-    kernel[bpg, tpb](rng_states, f_vals_sum)
+    kernel[bpg, tpb](rng_states, args.bound, args.N, f_vals_sum)
     volume = (2 * args.bound) ** args.d
     I_estimate = volume * f_vals_sum.copy_to_host() / args.N
 
