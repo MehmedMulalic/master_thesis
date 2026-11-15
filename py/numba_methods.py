@@ -1,8 +1,9 @@
 from numba import cuda
 from pathlib import Path
+from cupy import sum as cp_sum
 import numpy as np
-import time
 import math
+import StabilityException
 
 MAX_NNZ = 4_000_000_000     # 32GB VRAM
 K_E = 8.987551786214e9      # https://en.wikipedia.org/wiki/Coulomb%27s_law
@@ -127,7 +128,7 @@ def numba_spmv(args):
 
     kernel[blockspergrid, threadsperblock]()
 
-def numba_stencil(args):
+def numba_stencil(args, kernel_start_event):
     """
     Explicit 7-point stencil for the 3D heat equation.
     Assumes equal spacing in all three dimensions (dx=dy=dz). Will not work for unequal spacing.
@@ -138,61 +139,74 @@ def numba_stencil(args):
     Uses the 'reflect' mode as per defined Neumann boundary condition.
     """
     @cuda.jit
-    def kernel(u, u_step, alpha, dx, dy, grid_size, dt):
+    def kernel(u, u_step, alpha, dx, dy, dz, grid_size, dt):
         i, j, k = cuda.grid(3)
 
+        # 1 <= i, j, k < last_index; where last index is grid_size-1
         if 1 <= i < grid_size-1 and 1 <= j < grid_size-1 and 1 <= k < grid_size-1:
-            dudx2 = (u[i+1, j] - 2*u[i, j] + u[i-1, j]) / dx**2
-            dudy2 = (u[i, j+1] - 2*u[i, j] + u[i, j-1]) / dy**2
+            dudx2 = (u[i+1, j, k] - 2*u[i, j, k] + u[i-1, j, k]) / dx**2
+            dudy2 = (u[i, j+1, k] - 2*u[i, j, k] + u[i, j-1, k]) / dy**2
+            dudz2 = (u[i, j, k+1] - 2*u[i, j, k] + u[i, j, k-1]) / dz**2
 
-            u_step[i, j] = u[i, j] + alpha * dt * (dudx2 + dudy2)
+            u_step[i, j] = u[i, j, z] + alpha * dt * (dudx2 + dudy2 + dudz2)
 
-    A = 100.0                   # Peak temperature (°C)
-    sigma_initial = 0.2         # Initial width (m)
-    x0 = 0.5                    # Centre
-    alpha = 1.6563e-4           # Thermal diffusivity of pure silver (m^2/s)
-    L = 1.0                     # Domain limit (m)
+    A = 100.0                       # Peak temperature (°C)
+    sigma_initial = 0.2             # Initial width (m)
+    alpha = 1.6563e-4               # Thermal diffusivity of pure silver (99.9%) (m^2/s)
 
-    spacing = L / (args.grid_size - 1)
-    dt = 0.0003  #! zasto ovaj broj
-    t_final = 60
-    num_steps = int(t_final / dt)
+    x0 = y0 = z0 = 0.5              # Center
+    Lx = Ly = Lz = 1.0              # Domain limit (metres)
+    nx = ny = nz = args.grid_size
+
+    dx = Lx / (nx - 1)              # x spacing
+    dy = Ly / (ny - 1)              # y spacing
+    dz = Lz / (nz - 1)              # z spacing
+    dt = 0.0003                     # Time step (s)
+    t_final = 60                    # Final time step (s)
+    num_steps = round(t_final / dt)
 
     # Stability
-    r = alpha * dt / spacing**2
-    if (r > 0.25):
-        raise Exception("Unstable simulation")
+    r = alpha * dt / dx**3
+    if (r > 1/6):
+        raise StabilityException(f"Unstable simulation; must be below 0.167. Current r: {r}")
 
-    x = np.linspace(0.0, L, args.grid_size)
-    y = np.linspace(0.0, L, args.grid_size)
-    z = np.linspace(0.0, L, args.grid_size)
+    x = np.linspace(0.0, Lx, nx)
+    y = np.linspace(0.0, Ly, ny)
+    z = np.linspace(0.0, Lz, nz)
     X, Y, Z = np.meshgrid(x, y, z)
 
     # Initial condition (Gaussian bump)
-    u0 = A * np.exp( -((X - x0)**2 + (Y - x0)**2 + (Z - x0)**2) / (2 * sigma_initial**2) )
-
-    threadsperblock = (8, 8, 8)
-    blockspergrid_x = (args.grid_size + (threadsperblock[0] - 1)) // threadsperblock[0]
-    blockspergrid_y = (args.grid_size + (threadsperblock[1] - 1)) // threadsperblock[1]
-    blockspergrid_z = (args.grid_size + (threadsperblock[1] - 1)) // threadsperblock[2]
-    blockspergrid = (blockspergrid_x, blockspergrid_y, blockspergrid_z)
+    u0 = A * np.exp( -((X - x0)**2 + (Y - y0)**2 + (Z - z0)**2) / (2 * sigma_initial**2) )
 
     u_gpu = cuda.to_device(u0.copy())
     u_step_gpu = cuda.to_device(u0.copy())
 
-    #! treba li discarded warm up run
-    t0 = time.perf_counter()
-#! dx je sada spacing promijeni kernel da odgovara
+    # Kernel
+    tpb = (8, 8, 8)
+    bpg_x = (args.grid_size + (tpb[0] - 1)) // tpb[0]
+    bpg_y = (args.grid_size + (tpb[1] - 1)) // tpb[1]
+    bpg_z = (args.grid_size + (tpb[2] - 1)) // tpb[2]
+    bpg = (bpg_x, bpg_y, bpg_z)
+
+    # Warm up
+    kernel[bpg, tpb](u_gpu, u_step_gpu, alpha, dx, dy, dz, 3, dt)
+    u_gpu = cuda.to_device(u0.copy())
+    u_step_gpu = cuda.to_device(u0.copy())
+
+    start = cuda.event()
+    end = cuda.event()
+
+    kernel_start_event.set()
+    start.record()
+
     for step in range(num_steps):
-        kernel[blockspergrid, threadsperblock](u_gpu, u_step_gpu, alpha, dx, dy, nx, ny, dt)
+        kernel[bpg, tpb](u_gpu, u_step_gpu, alpha, dx, dy, dz, args.grid_size, dt)
         u_gpu, u_step_gpu = u_step_gpu, u_gpu
 
-    u_cpu = u_gpu.copy_to_host()
+    end.record()
+    end.synchronize()
 
-    t1 = time.perf_counter()
-    print(f"Time taken: {t1-t0:.5}s")
+    elapsed = cuda.event_elapsed_time(start, end)
+    sum_total = cp_sum(u_gpu.copy_to_host()).item()
 
-    filename_dir = Path(f"results")
-    filename_dir.mkdir(exist_ok=True)
-    filename = filename_dir / f"numba_stencil_explicit_{args.grid_size}.csv"
-    np.savetxt(filename, u_cpu, delimiter=",")
+    return elapsed, sum_total
