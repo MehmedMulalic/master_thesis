@@ -1,6 +1,6 @@
 import cupy as cp
 import numpy as np
-import StabilityException
+import StabilityException, ConvergenceException
 
 MAX_NNZ = 4_000_000_000     # 32GB VRAM
 K_E = 8.987551786214e9      # https://en.wikipedia.org/wiki/Coulomb%27s_law
@@ -53,8 +53,8 @@ def cupy_monte_carlo(args, kernel_start_event):
 
 def cupy_conjugate_gradient(args, kernel_start_event):
     """
-    Using Conjugate Gradient to solve -d^2u/dx^2 = sin(pi * x) with zero boundary conditions
-    whose exact solution is known to be u = sin(pi*x)/pi^2.
+    Using Conjugate Gradient to solve -d^2u/dx^2 = sin(pi * x) with zero boundary conditions (Dirichlet),
+    u(0) = u(1) = 1, whose exact solution is known to be u = sin(pi*x) / pi**2.
     
     Initial x is set to 0.
     1. Build the sparse Laplacian matrix A
@@ -62,21 +62,26 @@ def cupy_conjugate_gradient(args, kernel_start_event):
     3. Iterate until convergence
     """
 
-    print(f"\nProblem size N:             {args.N}")
-    print(f"Maximum iteration count:    {args.maxiter}")
-
     from cupyx.scipy.sparse import diags as sparse_diags
     from cupyx.scipy.sparse.linalg import cg
 
+    print(f"\nProblem size N:             {args.N}")
+    print(f"Maximum iteration count:    {args.maxiter}")
+
+    # Laplacian representation with spacing h
+    # -d^2u/dx^2 = -u[i-1] + 2u[i] - u[i+1], thus off-diagonals are -1 and diagonals are 2
     h = 1.0 / (args.N + 1)
     main_diag = 2.0 * cp.ones(args.N)
     off_diag = -1.0 * cp.ones(args.N - 1)
+    
+    # A = -d^2/dx^2; Au = -d^2u/dx^2
     A = sparse_diags([off_diag, main_diag, off_diag], offsets=[-1, 0, 1], format="csr")
-    A = A / (h ** 2)
+    A /= (h ** 2)
 
+    # Grid skips the 0 boundary values
+    # Au = sin(pi * x); b = sin(pi * x); Au = b
     grid = cp.linspace(0, 1, args.N + 2)[1:-1]
-    u = cp.sin(cp.pi * grid)
-    b = A @ u
+    b = cp.sin(cp.pi * grid)
 
     # Kernel
     _ = cg(A, b, rtol=1e-10, maxiter=args.maxiter)
@@ -87,14 +92,17 @@ def cupy_conjugate_gradient(args, kernel_start_event):
     kernel_start_event.set()
     start.record()
 
-    x = cg(A, b, rtol=1e-10, maxiter=args.maxiter)
+    u, info = cg(A, b, rtol=1e-10, maxiter=args.maxiter)
     
     end.record()
     end.synchronize()
 
+    if info != 0:
+        raise ConvergenceException("ERROR: Convergence to tolerance not achieved.")
+
     elapsed = cp.cuda.get_elapsed_time(start, end)
 
-    return elapsed, x
+    return elapsed, u
 
 def cupy_dcs(args, kernel_start_event):
     """
