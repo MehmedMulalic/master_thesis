@@ -107,6 +107,7 @@ def cupy_conjugate_gradient(args, kernel_start_event):
 def cupy_dcs(args, kernel_start_event):
     """
     Implementation of the Direct Coulomb Summation.
+    Due to a large 3D grid, batch processing is required with a default value of 65,536.
 
     Defines atoms as an array of [x, y, z, q] where x, y, z are the position and q is the charge.
     1. Sample random atom values
@@ -119,6 +120,7 @@ def cupy_dcs(args, kernel_start_event):
     def kernel(atoms, chunk=1 << 16, k_e=K_E):
         nx = ny = nz = args.grid_size
         total = nx * ny * nz
+        
         result = cp.empty(total, dtype=cp.float32)
         pos, q = atoms[:, :3], atoms[:, 3]
 
@@ -128,6 +130,7 @@ def cupy_dcs(args, kernel_start_event):
             gy = ((idx // nx) % ny).astype(cp.float32)
             gz = (idx // (nx * ny)).astype(cp.float32)
 
+            # Broadcasting: shape (8, 1) - shape (1, 16) -> shape (8, 16)
             dx = gx[:, None] - pos[None, :, 0]
             dy = gy[:, None] - pos[None, :, 1]
             dz = gz[:, None] - pos[None, :, 2]
@@ -143,7 +146,8 @@ def cupy_dcs(args, kernel_start_event):
     atoms = np.empty((args.particle_count, 4), dtype=np.float32)
     atoms[:, :3] = rng.integers(0, args.grid_size, size=(args.particle_count, 3), endpoint=True)
     atoms[:, 3] = rng.uniform(-5e-6, 5e-6, size=args.particle_count)
-    atoms = cp.asarray(atoms)
+    
+    d_atoms = cp.asarray(atoms)
 
     # Kernel
     start = cp.cuda.Event()
@@ -152,7 +156,7 @@ def cupy_dcs(args, kernel_start_event):
     kernel_start_event.set()
     start.record()
 
-    q = kernel(atoms)
+    q = kernel(d_atoms)
 
     end.record()
     end.synchronize()
