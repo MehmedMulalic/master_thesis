@@ -53,8 +53,8 @@ def cupy_monte_carlo(args, kernel_start_event):
 
 def cupy_conjugate_gradient(args, kernel_start_event):
     """
-    Using Conjugate Gradient to solve -d^2u/dx^2 = sin(pi * x) with zero boundary conditions (Dirichlet),
-    u(0) = u(1) = 1, whose exact solution is known to be u = sin(pi*x) / pi**2.
+    Implementation which uses Conjugate Gradient to solve -d^2u/dx^2 = sin(pi * x) with
+    Dirichlet boundary conditions, u(0) = u(1) = 1, whose exact solution is known to be u = sin(pi*x) / pi**2.
     
     Initial x is set to 0.
     1. Build the sparse Laplacian matrix A
@@ -173,9 +173,9 @@ def cupy_spectral(args, kernel_start_event):
     2. Evolve the frequency modes over time and transform back to the spatial domain
     """
 
-    print(f"\nGrid size:          [{args.grid_size}, {args.grid_size}, {args.grid_size}]")
-
     from cupyx.scipy.fft import dctn, idctn
+
+    print(f"\nGrid size:          [{args.grid_size}, {args.grid_size}, {args.grid_size}]")
 
     def kernel(u0, alpha, k_squared, dt, num_steps):
         u_hat = dctn(u0)
@@ -266,7 +266,7 @@ def cupy_spmv(args, kernel_start_event):
     nnz = round(N * N * density)
     if nnz > MAX_NNZ:
         raise ValueError(
-            f"Requested matrix would contain {nnz:,} nonzeros.\n"
+            f"ERROR: Requested matrix would contain {nnz:,} nonzeros.\n"
             f"Maximum allowed is {MAX_NNZ:,}."
         )
 
