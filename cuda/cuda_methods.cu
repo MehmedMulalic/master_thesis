@@ -50,48 +50,76 @@ int cuda_spectral() {
 
     cufftHandle planR2C, planC2R;
     
-    int fft_size = 10;
-    int batch_size = 1;
-    int element_count = batch_size * fft_size;
-    
+    int Nx = 2;
+    int Ny = 3;
+    int Nz = 4;
+    int fftSize = Ny;
+    int batchSize = Nx*Nz;
+    int elementCount = Nx * Ny * Nz;
+
+    //! Custom matrix for testing purposes
     std::vector<cufftReal> input = {
-            0.37454012f, 0.95071431f, 0.73199394f, 0.59865848f, 0.15601864f,
-            0.15599452f, 0.05808361f, 0.86617615f, 0.60111501f, 0.70807258f
-        };
-    std::vector<cufftReal> output(element_count, 0);
+        0.37454012f, 0.95071431f, 0.73199394f, 0.59865848f, 0.15601864f,
+        0.15599452f, 0.05808361f, 0.86617615f, 0.60111501f, 0.70807258f,
+        0.02058449f, 0.96990985f, 0.83244264f, 0.21233911f, 0.18182497f,
+        0.18340451f, 0.30424224f, 0.52475643f, 0.43194502f, 0.29122914f,
+        0.61185289f, 0.13949386f, 0.29214465f, 0.36636184f
+    };
+    std::vector<cufftReal> output(elementCount, 0);
 
-    // Sanity check
-    for (auto v: input) {
-        printf("%f, ", v);
-    }
-    printf("\n");
+    int threads = 256;
+    int blocks = (elementCount + threads - 1) / threads; 
 
-    cufftReal *d_input;
+    cufftReal *d_originalInput, *d_input;
     cufftComplex *d_output;
     
-    CHECK_CUFFT(cufftPlan1d(&planR2C, fft_size, CUFFT_R2C, batch_size));
-    CHECK_CUFFT(cufftPlan1d(&planC2R, fft_size, CUFFT_C2R, batch_size));
+    CHECK_CUFFT(cufftPlan1d(&planR2C, fftSize, CUFFT_R2C, batchSize));
+    CHECK_CUFFT(cufftPlan1d(&planC2R, fftSize, CUFFT_C2R, batchSize));
 
-    CHECK_CUDA(cudaMalloc((void**) &d_input, sizeof(cufftReal) * input.size()));
+    CHECK_CUDA(cudaMalloc((void**) &d_originalInput, sizeof(cufftReal) * input.size()));
     CHECK_CUDA(cudaMalloc((void**) &d_output, sizeof(cufftComplex) * output.size()));
 
-    // Forward FFT
-    CHECK_CUDA(cudaMemcpy(d_input, input.data(), sizeof(cufftReal) * input.size(), cudaMemcpyHostToDevice));
+    CHECK_CUDA(cudaMemcpy(d_originalInput, input.data(), sizeof(cufftReal) * input.size(), cudaMemcpyHostToDevice));
+
+    // test
+    int minGridSize, blockSize;
+    CHECK_CUDA(cudaOccupancyMaxPotentialBlockSize(&minGridSize, &blockSize, reordering_kernel, 0, 0));
+    printf("%d, %d\n", minGridSize, blockSize);
+
+    // DCT attempt
+    // 1. Reorder data
+    reordering_kernel<<<blocks, threads>>>(d_originalInput, d_input, Ny, Nz, elementCount);
+    CHECK_CUDA_KERNEL();
+
+    // 2. Forward FFT
     CHECK_CUFFT(cufftExecR2C(planR2C, d_input, d_output));
 
-    // Inverse FFT (backwards normalization)
+    // 3. Phase correction
+    cufftReal *d_dct;
+    dct_phase_correction<<<blocks, threads>>>(d_output, d_dct, Ny, Nz, elementCount);
+    CHECK_CUDA_KERNEL();
+
+    // iDCT attempt
+    // 1. Calculate V(k)
+    cufftComplex *d_vk;
+    idct_calc_vk<<<blocks, threads>>>(d_dct, d_vk, Ny, Nz, elementCount);
+    CHECK_CUDA_KERNEL();
+    
+    // 2. Inverse FFT (backwards normalization)
     CHECK_CUFFT(cufftExecC2R(planC2R, d_output, d_input));
     
-    scaling_kernel<<<1, 10>>>(d_input, element_count, 1/element_count);
+    scaling_kernel<<<blocks, threads>>>(d_input, elementCount, 1/elementCount);
+    CHECK_CUDA_KERNEL();
+
+    // 3. Reorder data
+    unreordering_kernel<<<blocks, threads>>>(d_input, d_originalInput, Ny, Nz, elementCount);
     CHECK_CUDA_KERNEL();
 
     CHECK_CUDA(cudaMemcpy(output.data(), d_input, sizeof(cufftReal) * output.size(), cudaMemcpyDeviceToHost));
 
-    // Display results
-    for (auto v: output) {
-        printf("%f, ", v);
-    }
-    printf("\n");
+    // Check results
+    bool is_close = allclose(input, output);
+    printf("%d\n", is_close);
 
     CHECK_CUFFT(cufftDestroy(planR2C));
     CHECK_CUFFT(cufftDestroy(planC2R));
