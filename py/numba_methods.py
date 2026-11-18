@@ -1,5 +1,4 @@
 from numba import cuda, float32
-from cupy import sum as cp_sum #? maybe sum on the CPU? check this; not important
 import numpy as np
 import math
 import StabilityException, ConvergenceException
@@ -123,16 +122,11 @@ def numba_monte_carlo(args, kernel_start_event):
             acc += math.exp(-sq)
         cuda.atomic.add(total, 0, acc)
 
-    rng_states = create_xoroshiro128p_states(n_threads, seed=42)
+    rng_states = create_xoroshiro128p_states(BPG*TPB, seed=42)
     f_vals_sum = cuda.to_device(np.zeros(1, dtype=np.float32))
 
-    # Kernel
-    bpg = 1
-    tpb = 32
-    n_threads = bpg * tpb
-
     # Warm up
-    kernel[bpg, tpb](rng_states, args.bound, args.N, f_vals_sum)
+    kernel[BPG, TPB](rng_states, args.bound, args.N, f_vals_sum)
     f_vals_sum = cuda.to_device(np.zeros(1, dtype=np.float32))
 
     start = cuda.event()
@@ -141,7 +135,7 @@ def numba_monte_carlo(args, kernel_start_event):
     kernel_start_event.set()
     start.record()
 
-    kernel[bpg, tpb](rng_states, args.bound, args.N, f_vals_sum)
+    kernel[BPG, TPB](rng_states, args.bound, args.N, f_vals_sum)
     volume = (2 * args.bound) ** args.d
     I_estimate = volume * f_vals_sum.copy_to_host() / args.N
 
@@ -269,6 +263,7 @@ def numba_conjugate_gradient(args, kernel_start_event):
 
     return elapsed, x.sum().item()
 
+def numba_dcs(args, kernel_start_event):
     """
     Implementation of the Direct Coulomb Summation.
 
@@ -276,25 +271,126 @@ def numba_conjugate_gradient(args, kernel_start_event):
     1. Sample random atom values
     2. Calculate U = k_e * (Ei qi/ri)
     """
+
+    print(f"\nGrid size:              [{args.grid_size}, {args.grid_size}, {args.grid_size}]")
+    print(f"Amount of particles:    {args.particle_count}")
+    
     @cuda.jit
     def kernel():
-        pass
+        tid = cuda.grid(1)
 
-    pass
+    rng = np.random.default_rng(42)
 
-def numba_spectral(args):
+    atoms = np.empty((args.particle_count, 4), dtype=np.float32)
+    atoms[:, :3] = rng.integers(0, args.grid_size, size=(args.particle_count, 3), endpoint=True)
+    atoms[:, 3] = rng.uniform(-5e-6, 5e-6, size=args.particle_count)
+
+    d_atoms = cuda.to_device(atoms)
+    d_output = cuda.to_device(np.zeros_like(atoms))
+
+    # Warm up
+    kernel[BPG, TPB](d_atoms, d_output) #! pretjerano velik array
+    d_output = cuda.to_device(np.zeros_like(atoms))
+
+    start = cuda.event()
+    end = cuda.event()
+
+    kernel_start_event.set()
+    start.record()
+
+    kernel[BPG, TPB](d_atoms, d_output)
+
+    end.record()
+    end.synchronize()
+
+    elapsed = cuda.event_elapsed_time(start, end)
+    sum_total = d_output.copy_to_host().sum().item()
+
+    return elapsed, sum_total
+
+def numba_spectral(args, kernel_start_event):
     """
     Solve the 3D heat equation using a spectral method.
     1. Transform the initial temperature field to frequency space
     2. Evolve the frequency modes over time and transform back to the spatial domain
     """
     @cuda.jit
-    def kernel():
-        pass
+    def kernel(output, u0, alpha, k_squared, dt, num_steps):
+        x, y, z = cuda.grid(3)
+        """
+        Ovdje bi najbolje bilo iskoristiti cupy fft i onda numba kernel za norm.
+        A zasto bas ovako kad bi se pitalo, objasnjenje je jednostavno.
+        Nece niko FFT praviti rucno kad je to vec odradjena funkcija, postoje vec
+        optimalni algoritmi za to tako da ako mi treba FFT koristicu neki library.
+        Eh sad, numba nema nikakv library za to, a cesto se desi da cupy i numba
+        zajedno rade, tako da je smisleno koristiti cupy u ovom slucaju cisto da
+        bi se cuFFT invoke-o jer Numba nema funkcionalnost da zove NVIDIA APIs direktno.
+        Tako da se moze zakljuciti iz navedenog da CuPy u ovom slucaju se koristi kao
+        zamjena da se invoke-a NVIDI API, cuFFT u ovo slucaju, te ostatak koda
+        koristi Numba-u tako da se moze zakljuciti da ovo ne utice na Numba istrazivanje.
+        """
 
-    pass
+    A = 100.0                       # Peak temperature (°C)
+    sigma_initial = 0.2             # Initial width (m)
+    alpha = 1.6563e-4               # Thermal diffusivity of pure silver (99.9%) (m^2/s)
 
-def numba_spmv(args):
+    x0 = y0 = z0 = 0.5              # Center
+    Lx = Ly = Lz = 1.0              # Domain limit (metres)
+    nx = ny = nz = args.grid_size
+
+    dx = Lx / (nx - 1)              # x spacing
+    dy = Ly / (ny - 1)              # y spacing
+    dz = Lz / (nz - 1)              # z spacing
+    dt = 0.0003                     # Time step (s)
+    t_final = 60                    # Final time step (s)
+    num_steps = round(t_final / dt)
+
+    x = np.linspace(0.0, Lx, nx)
+    y = np.linspace(0.0, Ly, ny)
+    z = np.linspace(0.0, Lz, nz)
+    X, Y, Z = np.meshgrid(x, y, z)
+
+    # Initial condition (Gaussian bump)
+    u0 = A * np.exp( -((X - x0)**2 + (Y - y0)**2 + (Z - z0)**2) / (2 * sigma_initial**2) )
+    d_u0 = cuda.to_device(u0)
+    N = u0.shape[0]
+            
+    # Frequency grid
+    kx = np.pi * np.arange(N) / N
+    ky = np.pi * np.arange(N) / N
+    kz = np.pi * np.arange(N) / N
+    KX, KY, KZ = np.meshgrid(kx, ky, kz)
+    
+    # Eigenvalues for Neumann BC
+    k_squared = (
+        2 * (np.cos(KX) - 1) / dx**2 +
+        2 * (np.cos(KY) - 1) / dy**2 +
+        2 * (np.cos(KZ) - 1) / dz**2
+    )
+
+    u_final = cuda.device_array((nx, ny, nz), dtype=np.float32)
+
+    # Warm up
+    kernel[BPG, TPB](u_final, u0, alpha, k_squared, dt, 1)
+    u_final = cuda.to_device(np.zeros())
+
+    start = cuda.event()
+    end = cuda.event()
+
+    kernel_start_event.set()
+    start.record()
+
+    kernel[BPG, TPB](u0, alpha, k_squared, dt, num_steps)
+
+    end.record()
+    end.synchronize()
+
+    elapsed = cuda.event_elapsed_time(start, end)
+    sum_total = u_final.copy_to_host().sum().item()
+
+    return elapsed, sum_total
+
+def numba_spmv(args, kernel_start_event):
     """
     Calculates the sparse matrix vector multiplication y = Ax.
 
@@ -305,10 +401,24 @@ def numba_spmv(args):
     def kernel():
         row = cuda.grid(1)
 
-    threadsperblock = 256
-    blockspergrid = (threadsperblock - 1) // threadsperblock
+    # Warm up
+    # kernel[]()
 
-    kernel[blockspergrid, threadsperblock]()
+    start = cuda.event()
+    end = cuda.event()
+
+    kernel_start_event.set()
+    start.record()
+
+    # kernel[]()
+
+    end.record()
+    end.synchronize()
+
+    elapsed = cuda.event_elapsed_time(start, end)
+    # sum_total = .sum().item()
+
+    return elapsed, sum_total
 
 def numba_stencil(args, kernel_start_event):
     """
