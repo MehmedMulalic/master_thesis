@@ -8,6 +8,8 @@
 
 #pragma once
 
+#define TPB 256
+
 #define CHECK_CUDA_KERNEL()                                                    \
 {                                                                              \
     cudaError_t err = cudaGetLastError();                                      \
@@ -122,6 +124,30 @@ __global__ void idct_calc_vk(const cufftReal* __restrict__ C,
     V[tid] = make_cuFloatComplex(0.5 * (a*c + b*s),
                                  0.5 * (a*s - b*c));
 }
+
+__global__ void dot_kernel(const float* x, const float* y, float* out, int n) {
+    __shared__ float sh[TPB];
+    int tid    = threadIdx.x;
+    int idx    = threadIdx.x + blockIdx.x * blockDim.x;
+    int stride = gridDim.x * blockDim.x;
+
+    float acc = 0.0;
+    for (; idx < n; idx += stride)
+        acc += x[idx] * y[idx];
+
+    sh[tid] = acc;
+    __syncthreads();
+
+    for (int s = TPB / 2; s > 0; s >>= 1) {
+        if (tid < s)
+            sh[tid] += sh[tid + s];
+        __syncthreads();
+    }
+
+    if (tid == 0)
+        out[blockIdx.x] = sh[0];
+}
+
 
 bool allclose(const std::vector<float>& a, const std::vector<float>& b, 
               float rtol = 1e-05, float atol = 1e-08) {
