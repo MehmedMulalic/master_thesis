@@ -7,6 +7,88 @@ import StabilityException
 MAX_NNZ = 4_000_000_000     #! ovo zapravo treba da bude 4G * X bytes jer ovo nije 32GB VRAM
 K_E = 8.987551786214e9      # https://en.wikipedia.org/wiki/Coulomb%27s_law
 
+#! podesi bpg, tpb u ostatku koda
+BPG = 1
+TPB = 256
+
+@cuda.jit
+def axpy_kernel(a, x, y, out):
+    i = cuda.grid(1)
+    if i < out.size:
+        out[i] = a * x[i] + y[i]
+
+@cuda.jit
+def spmv_csr(rowptr, col, val, x, y):
+    r = cuda.grid(1)
+    if r < y.size:
+        acc = 0.0
+        for j in range(rowptr[r], rowptr[r + 1]):
+            acc += val[j] * x[col[j]]
+        y[r] = acc
+
+@cuda.jit
+def dot_kernel(x, y, out):
+    """
+    The dot product can be defined naively through two kernels, element multiplication and sum reduction.
+    Element multiplication would be O(3N) : out[i] = a[i] * b[i]; 0 <= i < N.
+    Sum reduction would be O(1N): sum += out[i]; 0 <= i < N.
+    Thus the naive kernel would be O(4N) which can be reduced to O(2N) through the following dot kernel.
+    #! ovdje objasni razliku izmedju naive i ovog novog
+
+    The dot product kernel took inspiration from the following websites:
+    https://doc.sling.si/en/workshops/programming-gpu-cuda/04-programming/03-dotprod/#dot-product-optimized-usage-of-shared-memory-and-reduction
+    https://developer.download.nvidia.com/assets/cuda/files/reduction.pdf
+    """
+
+    sh     = cuda.shared.array(TPB, float32)
+    tid    = cuda.threadIdx.x
+    idx    = cuda.grid(1)
+    stride = cuda.gridsize(1)
+
+    # Element wise multiplication
+    acc = 0.0
+    while idx < x.size:
+        acc += x[idx] * y[idx]
+        idx += stride
+    sh[tid] = acc
+
+    cuda.syncthreads()
+
+    # Sum reduction (tree-based approach) #* can be optimized further
+    s = TPB // 2
+    while s > 0:
+        if tid < s:
+            sh[tid] += sh[tid + s]
+        cuda.syncthreads()
+        s //= 2
+    if tid == 0:
+        out[cuda.blockIdx.x] = sh[0]
+
+def axpy(a, x, y):
+    d_out = cuda.device_array(y.size)
+    bpg = (y.size + TPB - 1) // TPB
+    axpy_kernel[bpg, TPB](a, x, y, d_out)
+
+    out = d_out.copy_to_host()
+    return out
+
+def spmv(A, x):
+    y = cuda.device_array(x.size)
+    bpg = (x.size + TPB - 1) // TPB
+    spmv_csr[bpg, TPB](A.indptr, A.indices, A.data, x, y)
+
+    out = y.copy_to_host()
+    return y
+
+def dot(x, y):
+    """ #! both x and y should be flattened """
+    d_out = cuda.device_array(x.size, dtype=np.float32)
+    bpg = (x.size + TPB - 1) // TPB
+    dot_kernel[bpg, TPB](x, y, d_out)
+
+    out = d_out.copy_to_host()
+    return out.sum() #* CUDA: for (int b = 0; b < NBLK; ++b) result += h_partial[b];
+
 def numba_monte_carlo(args, kernel_start_event):
     """
     Monte Carlo integration of the Gaussian integral.
