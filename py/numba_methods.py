@@ -71,23 +71,61 @@ def numba_monte_carlo(args, kernel_start_event):
 
     return elapsed, I_estimate
     
-def numba_conjugate_gradient(args):
+def numba_conjugate_gradient(args, kernel_start_event):
     """
-    Using Conjugate Gradient to solve -d^2u/dx^2 = sin(pi * x) with zero boundary conditions
-    whose exact solution is known to be u = sin(pi*x)/pi^2.
+    Implementation which uses Conjugate Gradient to solve -d^2u/dx^2 = sin(pi * x) with
+    Dirichlet boundary conditions, u(0) = u(1) = 1, whose exact solution is known to be u = sin(pi*x) / pi**2.
     
     Initial x is set to 0.
     1. Build the sparse Laplacian matrix A
     2. Calculate the solution b
     3. Iterate until convergence
     """
+
+    from scipy.sparse import diags as sparse_diags
+
+    print(f"\nProblem size N:             {args.N}")
+    print(f"Maximum iteration count:    {args.maxiter}")
+
     @cuda.jit
     def kernel():
         pass
 
-    pass
+    # Laplacian representation with spacing h
+    # -d^2u/dx^2 = -u[i-1] + 2u[i] - u[i+1], thus off-diagonals are -1 and diagonals are 2
+    h = 1.0 / (args.N + 1)
+    main_diag = 2.0 * np.ones(args.N)
+    off_diag = -1.0 * np.ones(args.N - 1)
+    
+    # A = -d^2/dx^2; Au = -d^2u/dx^2
+    A = sparse_diags([off_diag, main_diag, off_diag], offsets=[-1, 0, 1], format="csr")
+    A /= (h ** 2)
 
-def numba_dcs(args):
+    # Grid skips the 0 boundary values
+    # Au = sin(pi * x); b = sin(pi * x); Au = b
+    grid = np.linspace(0, 1, args.N + 2)[1:-1]
+    b = np.sin(np.pi * grid)
+
+    x = cuda.to_device(np.zeros_like(A))
+
+    # Kernel
+    kernel(A, b, rtol=1e-10, maxiter=args.maxiter)
+
+    start = cuda.event()
+    end = cuda.event()
+
+    kernel_start_event.set()
+    start.record()
+
+    kernel(A, b, rtol=1e-10, maxiter=args.maxiter)
+    
+    end.record()
+    end.synchronize()
+
+    elapsed = cuda.event_elapsed_time(start, end)
+
+    return elapsed, x.copy_to_host()
+
     """
     Implementation of the Direct Coulomb Summation.
 
