@@ -1,11 +1,10 @@
-from numba import cuda
-from pathlib import Path
-from cupy import sum as cp_sum
+from numba import cuda, float32
+from cupy import sum as cp_sum #? maybe sum on the CPU? check this; not important
 import numpy as np
 import math
 import StabilityException
 
-MAX_NNZ = 4_000_000_000     # 32GB VRAM
+MAX_NNZ = 4_000_000_000     #! ovo zapravo treba da bude 4G * X bytes jer ovo nije 32GB VRAM
 K_E = 8.987551786214e9      # https://en.wikipedia.org/wiki/Coulomb%27s_law
 
 def numba_monte_carlo(args, kernel_start_event):
