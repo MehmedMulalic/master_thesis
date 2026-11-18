@@ -2,7 +2,7 @@ from numba import cuda, float32
 from cupy import sum as cp_sum #? maybe sum on the CPU? check this; not important
 import numpy as np
 import math
-import StabilityException
+import StabilityException, ConvergenceException
 
 MAX_NNZ = 4_000_000_000     #! ovo zapravo treba da bude 4G * X bytes jer ovo nije 32GB VRAM
 K_E = 8.987551786214e9      # https://en.wikipedia.org/wiki/Coulomb%27s_law
@@ -151,16 +151,51 @@ def numba_monte_carlo(args, kernel_start_event):
     elapsed = cuda.event_elapsed_time(start, end)
 
     return elapsed, I_estimate
+
+"""
+# CUSTOM CG IMPLEMENTATION FOR TESTING
+def custom_cg(A, b, rtol=1e-5, atol=0., maxiter=200):
+    N = A.shape[0] # int
+    x = np.zeros_like(b) # vector
+    r = b - (A@x) # vector
+    p = np.copy(r)
+
+    r_old = r.T@r #2 reduction
     
+    for iteration in range(maxiter):
+        if np.linalg.norm(r) <= max(rtol * np.linalg.norm(b), atol):
+            return x
+
+        Ap = A@p #1 parallel
+        alpha = r_old / (p.T @ Ap) #3 sequential
+
+        x = x + (alpha * p) #4 parallel
+        r = r - (alpha * Ap) #5 parallel
+        
+        r_new = (r.T@r) #6 reduction
+
+        beta = r_new / r_old #7 sequential
+        p = r + (beta*p) #8 parallel
+
+        r_old = r_new #(9) pointer switch
+
+    return x
+"""
+
 def numba_conjugate_gradient(args, kernel_start_event):
     """
     Implementation which uses Conjugate Gradient to solve -d^2u/dx^2 = sin(pi * x) with
     Dirichlet boundary conditions, u(0) = u(1) = 1, whose exact solution is known to be u = sin(pi*x) / pi**2.
+
+    The cg algorithm is done by the host but the computation is done by the GPU through
+    smaller mathematical kernels like axpy, spmv, and dot product.
     
     Initial x is set to 0.
+
+    The algorithm is defined through the following steps:
     1. Build the sparse Laplacian matrix A
-    2. Calculate the solution b
-    3. Iterate until convergence
+    2. Define the right hand side b
+    3. Iterate until x converges
     """
 
     from scipy.sparse import diags as sparse_diags
@@ -168,9 +203,38 @@ def numba_conjugate_gradient(args, kernel_start_event):
     print(f"\nProblem size N:             {args.N}")
     print(f"Maximum iteration count:    {args.maxiter}")
 
-    @cuda.jit
-    def kernel():
-        pass
+    def cg(A, b, rtol=1e-5, atol=0., maxiter=200):
+        """ x0 is always set to zero. """
+
+        #! Add error check for SPD ([nxn], xTAx),
+        #! check if others require error checking as well
+        b_sqared = dot(b.T, b)
+        N = A.shape[0]
+        x = np.zeros_like(b)
+
+        r = b - (spmv(A, x))
+        p = np.copy(r)
+
+        r_old = dot(r.T, r)
+
+        for _ in range(maxiter):
+            if r_old <= max(rtol**2 * b_sqared, atol):
+                return x
+
+            Ap = spmv_csr(A, p)
+            alpha = r_old / dot(p.T, Ap)
+
+            x = axpy(alpha, p, x)
+            r = axpy(-alpha, Ap, r)
+
+            r_new = dot(r.T, r)
+
+            beta = r_new / r_old
+            p = axpy(beta, p, r)
+
+            r_old = r_new
+
+        raise ConvergenceException("ERROR: Convergence to tolerance not achieved")
 
     # Laplacian representation with spacing h
     # -d^2u/dx^2 = -u[i-1] + 2u[i] - u[i+1], thus off-diagonals are -1 and diagonals are 2
@@ -187,10 +251,8 @@ def numba_conjugate_gradient(args, kernel_start_event):
     grid = np.linspace(0, 1, args.N + 2)[1:-1]
     b = np.sin(np.pi * grid)
 
-    x = cuda.to_device(np.zeros_like(A))
-
-    # Kernel
-    kernel(A, b, rtol=1e-10, maxiter=args.maxiter)
+    # Warm up
+    _ = cg(A, b, rtol=1e-10, maxiter=1)
 
     start = cuda.event()
     end = cuda.event()
@@ -198,14 +260,14 @@ def numba_conjugate_gradient(args, kernel_start_event):
     kernel_start_event.set()
     start.record()
 
-    kernel(A, b, rtol=1e-10, maxiter=args.maxiter)
+    x = cg(A, b, rtol=1e-10, maxiter=args.maxiter)
     
     end.record()
     end.synchronize()
 
     elapsed = cuda.event_elapsed_time(start, end)
 
-    return elapsed, x.copy_to_host()
+    return elapsed, x.sum().item()
 
     """
     Implementation of the Direct Coulomb Summation.
