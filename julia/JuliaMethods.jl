@@ -57,9 +57,9 @@ function julia_conjugate_gradient(args)
 
     # Laplacian representation with spacing h
     # -d^2u/dx^2 = -u[i-1] + 2u[i] - u[i+1], thus off-diagonals are -1 and diagonals are 2
-    h = 1f0 / (args["N"] + 1)
-    main_diag = fill(2f0, args["N"])
-    off_diag = fill(-1f0, args["N"]-1)
+    h = 1.0f0 / (args["N"] + 1)
+    main_diag = fill(2.0f0, args["N"])
+    off_diag = fill(-1.0f0, args["N"]-1)
 
     # A = -d^2/dx^2; Au = -d^2u/dx^2
     A = spdiagm(-1 => off_diag, 0 => main_diag, 1 => off_diag)
@@ -68,7 +68,7 @@ function julia_conjugate_gradient(args)
     # Grid skips the 0 boundary values
     # Au = sin(pi * x); b = sin(pi * x); Au = b
     grid = CuArray{TypeAlias}(undef, args["N"+2])
-    grid = range(0f0, 1f0, length=args["N"]+2)[2:end-1]
+    grid = range(0.0f0, 1.0f0, length=args["N"]+2)[2:end-1]
     b = sin.(pi .* grid)
 
     devA = CUDA.CuSparseMatrixCSR(A)
@@ -112,12 +112,12 @@ function julia_spectral(args)
         return real.(u_final)
     end
 
-    A = 100f0                       # Peak temperature (°C)
-    sigma_initial = 0f2             # Initial width (m)
+    A = 100.0f0                     # Peak temperature (°C)
+    sigma_initial = 0.2f            # Initial width (m)
     alpha = 1.6563f-4               # Thermal diffusivity of pure silver (99.9%) (m^2/s)
 
-    x0 = y0 = z0 = 0f5              # Center
-    Lx = Ly = Lz = 1f0              # Domain limit (metres)
+    x0 = y0 = z0 = 0.5f             # Center
+    Lx = Ly = Lz = 1.0f0            # Domain limit (metres)
     nx = ny = nz = args["grid-size"]
 
     dx = Lx / (nx - 1)              # x spacing
@@ -130,9 +130,9 @@ function julia_spectral(args)
     devx = CuArray{TypeAlias}(undef, nx)
     devy = CuArray{TypeAlias}(undef, ny)
     devz = CuArray{TypeAlias}(undef, nz)
-    devx .= range(0f0, Lx, nx)
-    devy .= range(0f0, Ly, ny)
-    devz .= range(0f0, Lz, nz)
+    devx .= range(0.0f0, Lx, nx)
+    devy .= range(0.0f0, Ly, ny)
+    devz .= range(0.0f0, Lz, nz)
     
     # NumPy's meshgrid equates to Julia's reshaping which is
     # automatically broadcasted during u0 and frequency grid calculations.
