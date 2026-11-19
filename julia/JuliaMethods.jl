@@ -43,8 +43,8 @@ function julia_monte_carlo(args, seed::Int64=0)
 end
 
 """
-Using Conjugate Gradient to solve -d^2u/dx^2 = sin(pi * x) with zero boundary conditions
-whose exact solution is known to be u = sin(pi*x)/pi^2.
+Implementation which uses Conjugate Gradient to solve -d^2u/dx^2 = sin(pi * x) with
+Dirichlet boundary conditions, u(0) = u(1) = 1, whose exact solution is known to be u = sin(pi*x) / pi**2.
 
 Initial x is set to 0.
 1. Build the sparse Laplacian matrix A
@@ -55,15 +55,21 @@ function julia_conjugate_gradient(args)
     @printf("Problem size N:            %d\n", args["N"])
     @printf("Maximum iteration count:   %d\n", args["maxiter"])
 
+    # Laplacian representation with spacing h
+    # -d^2u/dx^2 = -u[i-1] + 2u[i] - u[i+1], thus off-diagonals are -1 and diagonals are 2
     h = 1f0 / (args["N"] + 1)
-    main_diag = fill(2f0, args["N"]) #? treba li ovo biti random a ne samo 2? jel 2 samo ono user-defined?
+    main_diag = fill(2f0, args["N"])
     off_diag = fill(-1f0, args["N"]-1)
-    A = spdiagm(-1 => off_diag, 0 => main_diag, 1 => off_diag)
-    A = A ./ (h^2)
 
-    grid = range(0, 1, length=args["N"]+2)[2:end-1]
-    u = sin.(pi .* grid)
-    b = A * u
+    # A = -d^2/dx^2; Au = -d^2u/dx^2
+    A = spdiagm(-1 => off_diag, 0 => main_diag, 1 => off_diag)
+    A ./= (h^2)
+
+    # Grid skips the 0 boundary values
+    # Au = sin(pi * x); b = sin(pi * x); Au = b
+    grid = CuArray{TypeAlias}(undef, args["N"+2])
+    grid = range(0f0, 1f0, length=args["N"]+2)[2:end-1]
+    b = sin.(pi .* grid)
 
     devA = CUDA.CuSparseMatrixCSR(A)
     devb = CuArray(b)
