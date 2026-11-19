@@ -11,7 +11,8 @@ export julia_monte_carlo, julia_conjugate_gradient, julia_dcs
 export julia_spectral, julia_spmv, julia_stencil
 
 const TypeAlias = Float32
-const MAX_NNZ = 4_000_000_000   # 32GB VRAM
+const MAX_NNZ = 4_000_000_000     # 32GB VRAM
+const K_E = 8.987551786214e9      # https://en.wikipedia.org/wiki/Coulomb%27s_law
 
 """
 Monte Carlo integration of the Gaussian integral.
@@ -82,14 +83,67 @@ end
 
 """
 Implementation of the Direct Coulomb Summation.
+Due to a large 3D grid, batch processing is required with a default value of 65,536.
 
 Defines atoms as an array of [x, y, z, q] where x, y, z are the position and q is the charge.
 1. Sample random atom values
 2. Calculate U = k_e * (Ei qi/ri)
 """
-function julia_dcs(args)
-    @printf("Grid size:              [%d, %d, %d]\n", args[grid-size], args[grid-size], args[grid-size])
+function julia_dcs(args; seed::Int64=0)
+    @printf("Grid size:              [%d, %d, %d]\n", args["grid-size"], args["grid-size"], args["grid-size"])
     @printf("Amount of particles:    %d\n", args["particle-count"])
+
+    function kernel(atoms, result; chunk::Int64=1 << 16, k_e = K_E)
+        nx = ny = nz = args["grid-size"]
+        total = nx * ny * nz
+
+        pos = @view atoms[:, 1:3]
+        q = @view atoms[:, 4]
+
+        for start in 1:chunk:total
+            stop = min(start + chunk, total) #? minus jedan?
+            idx = CuArray(start:stop)
+
+            gx = Float32.(idx .% nx)
+            gy = Float32.((idx .// nx) % ny)
+            gz = Float32.(idx .// (nx * ny))
+
+            # Broadcasting: shape (chunk_size, 1) - shape (1, particle_count)
+            # shape (chunk_size, particle_count)
+            dx = reshape(gx, :, 1) .- reshape(pos[:, 1], 1, :)
+            dy = reshape(gy, :, 1) .- reshape(pos[:, 2], 1, :)
+            dz = reshape(gz, :, 1) .- reshape(pos[:, 3], 1, :)
+
+            r = sqrt.(dx.^2 .+ dy.^2 .+ dz.^2)
+            r = ifelse.(r .> 0, r, 1f0) # Avoid division by zero
+
+            contrib = ifelse.(
+                r .> 0,
+                reshape(q, 1, :) ./ r,
+                0f0
+            )
+            result[start:start+length(idx)] .= k_e .* vec(sum(contrib, dims=2))
+        end
+        
+        return reshape(result, nz, ny, nx)
+    end
+    
+    if seed != 0
+        CUDA.seed!(seed)
+    end
+
+    atoms = empty(TypeAlias, args["particle-count"], 4)
+    atoms[:, 1:3] .= CUDA.rand(TypeAlias, 0, args["grid-size"], args["particle-count"], 3)
+    atoms[:, 4] .= 1f-5 .* CUDA.rand(args["particle-count"]) .- 5f-6
+    
+    total = args["grid-size"]^3
+    d_atoms = cp.asarray(atoms)
+    result = CuArray{TypeAlias}(undef, total)
+
+    d_q = kernel(d_atoms, result)
+    q = Array(d_q)
+
+    return sum(q)
 end
 
 """
