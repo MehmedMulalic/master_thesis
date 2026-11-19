@@ -130,7 +130,8 @@ def cupy_dcs(args, kernel_start_event):
             gy = ((idx // nx) % ny).astype(cp.float32)
             gz = (idx // (nx * ny)).astype(cp.float32)
 
-            # Broadcasting: shape (8, 1) - shape (1, 16) -> shape (8, 16)
+            # Broadcasting: shape (chunk_size, 1) - shape (1, particle_count)
+            # shape (chunk_size, particle_count)
             dx = gx[:, None] - pos[None, :, 0]
             dy = gy[:, None] - pos[None, :, 1]
             dz = gz[:, None] - pos[None, :, 2]
