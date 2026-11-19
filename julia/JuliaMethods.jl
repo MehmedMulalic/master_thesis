@@ -207,7 +207,73 @@ The stencil is calculated by convolving the laplacian kernel.
 Uses the 'reflect' mode as per defined Neumann boundary condition.
 """
 function julia_stencil(args)
-    println("pass")
+    A = 100.0f0                     # Peak temperature (°C)
+    sigma_initial = 0.2f            # Initial width (m)
+    alpha = 1.6563f-4               # Thermal diffusivity of pure silver (99.9%) (m^2/s)
+
+    x0 = y0 = z0 = 0.5f             # Center
+    Lx = Ly = Lz = 1.0f0            # Domain limit (metres)
+    nx = ny = nz = args["grid-size"]
+
+    dx = Lx / (nx - 1)              # x spacing
+    dy = Ly / (ny - 1)              # y spacing
+    dz = Lz / (nz - 1)              # z spacing
+    dt = 3f-4                       # Time step (s)
+    t_final = 60                    # Final time step (s)
+    num_steps = round(Int32, t_final / dt)
+
+    # Stability
+    r = alpha * dt / (dx^2)
+    if r > 1/6
+        throw(StabilityError("Unstable simulation; must be below 0.167. Current r: $(r)"))
+    end
+
+    devx = CuArray{TypeAlias}(undef, nx)
+    devy = CuArray{TypeAlias}(undef, ny)
+    devz = CuArray{TypeAlias}(undef, nz)
+    devx .= range(0.0f0, Lx, nx)
+    devy .= range(0.0f0, Ly, ny)
+    devz .= range(0.0f0, Lz, nz)
+    
+    # NumPy's meshgrid equates to Julia's reshaping which is
+    # automatically broadcasted during u0 and frequency grid calculations.
+    X = reshape(devx, :, 1, 1)
+    Y = reshape(devy, 1, :, 1)
+    Z = reshape(devz, 1, 1, :)
+
+    # Laplacian kernel
+    kernel_array = CUDA.zeros(TypeAlias, 3, 3, 3)
+
+    # Above, below (z-axis)
+    kernel_array[0, 1, 1] = 1.0f0
+    kernel_array[2, 1, 1] = 1.0f0
+
+    # Up, down (y-axis)
+    kernel_array[1, 0, 1] = 1.0f0
+    kernel_array[1, 2, 1] = 1.0f0
+
+    # Left, right (x-axis)
+    kernel_array[1, 1, 0] = 1.0f0
+    kernel_array[1, 1, 2] = 1.0f0
+
+    # Center
+    kernel_array[1, 1, 1] = -6.0f0
+    kernel_array ./= dx^2
+
+    # Initial condition (Gaussian bump)
+    u0 = A .* exp.(
+        -(
+            (X .- x0).^2 .+
+            (Y .- y0).^2 .+
+            (Z .- z0).^2
+        ) ./ (2 * sigma_initial^2)
+    )
+
+    # Kernel
+    _ = kernel(u0, alpha, kernel_array, dt, num_steps)
+    u = kernel(u0, alpha, kernel_array, dt, num_steps)
+    
+    return
 end
 
 end
