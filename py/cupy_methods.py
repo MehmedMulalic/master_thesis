@@ -65,7 +65,7 @@ def init_laplacian_kernel_(dx):
 
     # Center
     kernel_array[1, 1, 1] = -6
-    kernel_array /= dx**3
+    kernel_array /= dx**2
 
     return kernel_array
 
