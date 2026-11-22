@@ -48,7 +48,7 @@ def init_heat_equation_(args, stability=True):
 
     return u0, dx, num_steps
 
-def init_laplacian_kernel_(dx):
+def init_laplacian_array_(dx):
     kernel_array = cp.zeros((3, 3, 3), dtype=TYPE_ALIAS)
 
     # Above, below (z-axis)
@@ -254,7 +254,7 @@ def cupy_spectral(args, kernel_start_event):
 
     print(f"\nGrid size:          [{args.grid_size}, {args.grid_size}, {args.grid_size}]")
 
-    def kernel(u0, alpha, k_squared, dt, num_steps):
+    def kernel(u0, k_squared, num_steps, alpha, dt):
         u_hat = dctn(u0)
         evolution_operator = cp.exp(alpha * k_squared * dt)
         
@@ -283,7 +283,7 @@ def cupy_spectral(args, kernel_start_event):
 
     # Kernel
     cp.cuda.Stream.null.synchronize()
-    _ = kernel(u0, ALPHA, k_squared, DT, 1)
+    _ = kernel(u0, k_squared, 1, ALPHA, DT)
     cp.cuda.Stream.null.synchronize()
 
     start = cp.cuda.Event()
@@ -292,7 +292,7 @@ def cupy_spectral(args, kernel_start_event):
     kernel_start_event.set()
     start.record()
 
-    u_final = kernel(u0, ALPHA, k_squared, DT, num_steps)
+    u_final = kernel(u0, k_squared, num_steps, ALPHA, DT)
 
     end.record()
     end.synchronize()
@@ -304,47 +304,55 @@ def cupy_spectral(args, kernel_start_event):
 
 def cupy_spmv(args, kernel_start_event):
     """
-    Calculates the sparse matrix vector multiplication y = Ax.
+    Calculates the heat equation through sparse matrix vector multiplication y = ax.
+    The equation is defined as u_{n+1} = M * u_{n} where M is the sparse matrix defined as
+    M = (I + alpha * delta t * laplacian) * u_n, where u_n is the flattened temperature field vector.
 
-    The kernel utilizes power iteration to increase its duration.
+    Stability, for equal spacing, is defined as r = alpha*dt / spacing^2 for which, in 3D, must be r <= 1/6.
     """
 
     print(f"\nAmount of iterations:       {args.iterations}")
 
-    from cupyx.scipy.sparse import csr_matrix
+    from cupyx.scipy.sparse import diags, identity, kron
 
-    def kernel(A_csr, x):
-        for _ in range(args.iterations):
-            x = A_csr @ x
-            x = x / cp.linalg.norm(x)
+    def init_sparse_laplacian_array_(n, dx):
+        lower  = cp.ones(n-1, dtype=TYPE_ALIAS)
+        middle = cp.full(n, -2, dtype=TYPE_ALIAS)
+        upper  = cp.ones(n-1, dtype=TYPE_ALIAS)
 
-        return x
+        # Neumann BC
+        lower[-1] = 2
+        upper[0] = 2
+        
+        D = diags([lower, middle, upper], [-1, 0, 1], shape=(n, n), format="csr", dtype=TYPE_ALIAS)
+        I = identity(n, format="csr", dtype=TYPE_ALIAS)
 
-    N = 300_000
-    density = 0.01
-    nnz = round(N * N * density)
-
-    total_bytes = (2*nnz*SIZEOF_TYPE) + ((N+1)*SIZEOF_TYPE) + (3*nnz*SIZEOF_TYPE)
-    if (total_bytes) > MAX_VRAM:
-        raise MemoryException(
-            f"ERROR: Requested matrix would require {total_bytes/1024**3} GB.\n"
-            f"Device total is {MAX_VRAM} GB."
+        L = (
+            kron(kron(D, I), I) +
+            kron(kron(I, D), I) +
+            kron(kron(I, I), D)
         )
-    print(f"Total VRAM usage: {total_bytes/1024**3} GB")
 
-    cp.random.seed(42)
+        return (L / dx**2).tocsr()
 
-    rows = cp.random.randint(0, N, size=nnz, dtype=INTEGER_TYPE)
-    cols = cp.random.randint(0, N, size=nnz, dtype=INTEGER_TYPE)
-    data = cp.random.rand(nnz, dtype=TYPE_ALIAS)
+    def kernel(u, M, num_steps):
+        for _ in range(num_steps):
+            u = M @ u
 
-    A = csr_matrix((data, (rows, cols)), shape=(N, N))
-    x = cp.random.rand(N, dtype=TYPE_ALIAS)
+        return u
 
-    cp.cuda.Stream.null.synchronize()
-
+    u0, dx, num_steps = init_heat_equation_(args)
+    L = init_sparse_laplacian_array_(args.grid_size, dx)
+    N = u0.size
+    
+    u0 = cp.ravel(u0)
+    I = identity(N, format="csr", dtype=TYPE_ALIAS)
+    M = I + (ALPHA * DT * L)
+    
     # Kernel
-    _ = kernel(A, x)
+    cp.cuda.Stream.null.synchronize()
+    _ = kernel(u0, M, 1)
+    cp.cuda.Stream.null.synchronize()
 
     start = cp.cuda.Event()
     end = cp.cuda.Event()
@@ -352,7 +360,7 @@ def cupy_spmv(args, kernel_start_event):
     kernel_start_event.set()
     start.record()
 
-    y = kernel(A, x)
+    y = kernel(u0, M, num_steps)
 
     end.record()
     end.synchronize()
@@ -377,7 +385,7 @@ def cupy_stencil(args, kernel_start_event):
 
     print(f"\nGrid size:              [{args.grid_size}, {args.grid_size}, {args.grid_size}]")
 
-    def kernel(u, alpha, kernel_array, dt, num_steps):
+    def kernel(u, kernel_array, num_steps, alpha, dt):
         for _ in range(num_steps):
             laplacian = convolve(u, kernel_array)
             u += alpha * dt * laplacian
@@ -385,11 +393,11 @@ def cupy_stencil(args, kernel_start_event):
         return u
 
     u0, dx, num_steps = init_heat_equation_(args)
-    kernel_array = init_laplacian_kernel_(dx)
+    kernel_array = init_laplacian_array_(dx)
 
     # Kernel
     cp.cuda.Stream.null.synchronize()
-    _ = kernel(u0, ALPHA, kernel_array, DT, 1)
+    _ = kernel(u0, kernel_array, 1, ALPHA, DT)
     cp.cuda.Stream.null.synchronize()
 
     start = cp.cuda.Event()
@@ -398,7 +406,7 @@ def cupy_stencil(args, kernel_start_event):
     kernel_start_event.set()
     start.record()
 
-    u = kernel(u0, ALPHA, kernel_array, DT, num_steps)
+    u = kernel(u0, kernel_array, num_steps, ALPHA, DT)
 
     end.record()
     end.synchronize()
