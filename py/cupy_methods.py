@@ -17,7 +17,57 @@ SIZEOF_TYPE = {
 }[TYPE_ALIAS]
 
 K_E = 8.987551786214e9      # https://en.wikipedia.org/wiki/Coulomb%27s_law
+ALPHA = 1.6563e-4           # Thermal diffusivity of pure silver (99.9%) (m^2/s)
+DT = 0.0003                 # Time step (s)
 _, MAX_VRAM = cp.cuda.Device().mem_info
+
+def init_heat_equation_(args, stability=True):
+    A = 100.0                       # Peak temperature (°C)
+    sigma_initial = 0.2             # Initial width (m)
+
+    x0 = y0 = z0 = 0.5              # Center
+    Lx = Ly = Lz = 1.0              # Domain limit (metres)
+    nx = ny = nz = args.grid_size
+
+    dx = Lx / (nx - 1)              # x spacing (we assume dx=dy=dz in this case)
+    t_final = 60                    # Final time step (s)
+    num_steps = round(t_final / DT)
+
+    # Stability
+    r = ALPHA * DT / dx**2          # Holds only if equal spacing dx=dy=dz
+    if (r > 1/6) and stability:     # Coefficient for 3D space
+        raise StabilityException(f"Unstable simulation; must be below 0.167. Current r: {r}")
+
+    x = cp.linspace(0.0, Lx, nx)
+    y = cp.linspace(0.0, Ly, ny)
+    z = cp.linspace(0.0, Lz, nz)
+    X, Y, Z = cp.meshgrid(x, y, z)
+
+    # Initial condition (Gaussian bump)
+    u0 = A * cp.exp( -((X - x0)**2 + (Y - y0)**2 + (Z - z0)**2) / (2 * sigma_initial**2) )
+
+    return u0, dx, num_steps
+
+def init_laplacian_kernel_(dx):
+    kernel_array = cp.zeros((3, 3, 3), dtype=TYPE_ALIAS)
+
+    # Above, below (z-axis)
+    kernel_array[0, 1, 1] = 1
+    kernel_array[2, 1, 1] = 1
+
+    # Up, down (y-axis)
+    kernel_array[1, 0, 1] = 1
+    kernel_array[1, 2, 1] = 1
+
+    # Left, right (x-axis)
+    kernel_array[1, 1, 0] = 1
+    kernel_array[1, 1, 2] = 1
+
+    # Center
+    kernel_array[1, 1, 1] = -6
+    kernel_array /= dx**3
+
+    return kernel_array
 
 def cupy_monte_carlo(args, kernel_start_event):
     """
@@ -190,9 +240,14 @@ def cupy_dcs(args, kernel_start_event):
 
 def cupy_spectral(args, kernel_start_event):
     """
-    Solve the 3D heat equation using a spectral method.
+    Solve the 3D heat equation using spectral evolution.
+    Assumes equal spacing in all three dimensions (dx=dy=dz). Will not work for unequal spacing.
+
+    Stability is unconditionally stable for this numerical method.
+
     1. Transform the initial temperature field to frequency space
-    2. Evolve the frequency modes over time and transform back to the spatial domain
+    2. Evolve the frequency modes over time
+    3. Transform back to the spatial domain
     """
 
     from cupyx.scipy.fft import dctn, idctn
@@ -209,30 +264,10 @@ def cupy_spectral(args, kernel_start_event):
         u_final = idctn(u_hat).real
         return u_final
 
-    A = 100.0                       # Peak temperature (°C)
-    sigma_initial = 0.2             # Initial width (m)
-    alpha = 1.6563e-4               # Thermal diffusivity of pure silver (99.9%) (m^2/s)
-
-    x0 = y0 = z0 = 0.5              # Center
-    Lx = Ly = Lz = 1.0              # Domain limit (metres)
-    nx = ny = nz = args.grid_size
-
-    dx = Lx / (nx - 1)              # x spacing
-    dy = Ly / (ny - 1)              # y spacing
-    dz = Lz / (nz - 1)              # z spacing
-    dt = 0.0003                     # Time step (s)
-    t_final = 60                    # Final time step (s)
-    num_steps = round(t_final / dt)
-
-    x = cp.linspace(0.0, Lx, nx)
-    y = cp.linspace(0.0, Ly, ny)
-    z = cp.linspace(0.0, Lz, nz)
-    X, Y, Z = cp.meshgrid(x, y, z)
-
-    # Initial condition (Gaussian bump)
-    u0 = A * cp.exp( -((X - x0)**2 + (Y - y0)**2 + (Z - z0)**2) / (2 * sigma_initial**2) )
+    u0, dx, num_steps = init_heat_equation_(args, stability=False)
+    dz = dy = dx
     N = u0.shape[0]
-            
+
     # Frequency grid
     kx = cp.pi * cp.arange(N) / N
     ky = cp.pi * cp.arange(N) / N
@@ -248,7 +283,7 @@ def cupy_spectral(args, kernel_start_event):
 
     # Kernel
     cp.cuda.Stream.null.synchronize()
-    _ = kernel(u0, alpha, k_squared, dt, 1)
+    _ = kernel(u0, ALPHA, k_squared, DT, 1)
     cp.cuda.Stream.null.synchronize()
 
     start = cp.cuda.Event()
@@ -257,7 +292,7 @@ def cupy_spectral(args, kernel_start_event):
     kernel_start_event.set()
     start.record()
 
-    u_final = kernel(u0, alpha, k_squared, dt, num_steps)
+    u_final = kernel(u0, ALPHA, k_squared, DT, num_steps)
 
     end.record()
     end.synchronize()
@@ -349,54 +384,12 @@ def cupy_stencil(args, kernel_start_event):
 
         return u
 
-    A = 100.0                       # Peak temperature (°C)
-    sigma_initial = 0.2             # Initial width (m)
-    alpha = 1.6563e-4               # Thermal diffusivity of pure silver (99.9%) (m^2/s)
-
-    x0 = y0 = z0 = 0.5              # Center
-    Lx = Ly = Lz = 1.0              # Domain limit (metres)
-    nx = ny = nz = args.grid_size
-
-    dx = Lx / (nx - 1)              # x spacing (we assume dx=dy=dz in this case)
-    dt = 0.0003                     # Time step (s)
-    t_final = 60                    # Final time step (s)
-    num_steps = round(t_final / dt)
-
-    # Stability
-    r = alpha * dt / dx**2          # Holds only if equal spacing dx=dy=dz
-    if (r > 1/6):                   # Coefficient for 3D space
-        raise StabilityException(f"Unstable simulation; must be below 0.167. Current r: {r}")
-
-    x = cp.linspace(0.0, Lx, nx)
-    y = cp.linspace(0.0, Ly, ny)
-    z = cp.linspace(0.0, Lz, nz)
-    X, Y, Z = cp.meshgrid(x, y, z)
-
-    # Laplacian kernel
-    kernel_array = cp.zeros((3, 3, 3), dtype=TYPE_ALIAS)
-
-    # Above, below (z-axis)
-    kernel_array[0, 1, 1] = 1
-    kernel_array[2, 1, 1] = 1
-
-    # Up, down (y-axis)
-    kernel_array[1, 0, 1] = 1
-    kernel_array[1, 2, 1] = 1
-
-    # Left, right (x-axis)
-    kernel_array[1, 1, 0] = 1
-    kernel_array[1, 1, 2] = 1
-
-    # Center
-    kernel_array[1, 1, 1] = -6
-    kernel_array /= dx**2
-
-    # Initial condition (Gaussian bump)
-    u0 = A * cp.exp( -((X - x0)**2 + (Y - y0)**2 + (Z - z0)**2) / (2 * sigma_initial**2) )
+    u0, dx, num_steps = init_heat_equation_(args)
+    kernel_array = init_laplacian_kernel_(dx)
 
     # Kernel
     cp.cuda.Stream.null.synchronize()
-    _ = kernel(u0, alpha, kernel_array, dt, 1)
+    _ = kernel(u0, ALPHA, kernel_array, DT, 1)
     cp.cuda.Stream.null.synchronize()
 
     start = cp.cuda.Event()
@@ -405,7 +398,7 @@ def cupy_stencil(args, kernel_start_event):
     kernel_start_event.set()
     start.record()
 
-    u = kernel(u0, alpha, kernel_array, dt, num_steps)
+    u = kernel(u0, ALPHA, kernel_array, DT, num_steps)
 
     end.record()
     end.synchronize()
