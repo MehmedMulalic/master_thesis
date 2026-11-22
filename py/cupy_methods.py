@@ -49,6 +49,7 @@ def cupy_monte_carlo(args, kernel_start_event):
         return I_estimate
 
     _ = kernel()
+    cp.cuda.Stream.null.synchronize()
 
     start = cp.cuda.Event()
     end = cp.cuda.Event()
@@ -98,7 +99,9 @@ def cupy_conjugate_gradient(args, kernel_start_event):
     b = cp.sin(cp.pi * grid)
 
     # Kernel
+    cp.cuda.Stream.null.synchronize()
     _ = cg(A, b, rtol=1e-10, maxiter=args.maxiter)
+    cp.cuda.Stream.null.synchronize()
 
     start = cp.cuda.Event()
     end = cp.cuda.Event()
@@ -165,6 +168,10 @@ def cupy_dcs(args, kernel_start_event):
     d_atoms = cp.asarray(atoms)
 
     # Kernel
+    cp.cuda.Stream.null.synchronize()
+    _ = kernel(d_atoms)
+    cp.cuda.Stream.null.synchronize()
+    
     start = cp.cuda.Event()
     end = cp.cuda.Event()
 
@@ -240,7 +247,9 @@ def cupy_spectral(args, kernel_start_event):
     )
 
     # Kernel
+    cp.cuda.Stream.null.synchronize()
     _ = kernel(u0, alpha, k_squared, dt, 1)
+    cp.cuda.Stream.null.synchronize()
 
     start = cp.cuda.Event()
     end = cp.cuda.Event()
@@ -333,12 +342,12 @@ def cupy_stencil(args, kernel_start_event):
 
     print(f"\nGrid size:              [{args.grid_size}, {args.grid_size}, {args.grid_size}]")
 
-    def kernel(u0, alpha, kernel_array, dt, num_steps):
+    def kernel(u, alpha, kernel_array, dt, num_steps):
         for _ in range(num_steps):
-            laplacian = convolve(u0, kernel_array)
-            u0 += alpha * dt * laplacian
+            laplacian = convolve(u, kernel_array)
+            u += alpha * dt * laplacian
 
-        return u0
+        return u
 
     A = 100.0                       # Peak temperature (°C)
     sigma_initial = 0.2             # Initial width (m)
@@ -384,9 +393,11 @@ def cupy_stencil(args, kernel_start_event):
 
     # Initial condition (Gaussian bump)
     u0 = A * cp.exp( -((X - x0)**2 + (Y - y0)**2 + (Z - z0)**2) / (2 * sigma_initial**2) )
-            
+
     # Kernel
+    cp.cuda.Stream.null.synchronize()
     _ = kernel(u0, alpha, kernel_array, dt, 1)
+    cp.cuda.Stream.null.synchronize()
 
     start = cp.cuda.Event()
     end = cp.cuda.Event()
