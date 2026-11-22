@@ -1,9 +1,23 @@
 import cupy as cp
 import numpy as np
-import StabilityException, ConvergenceException
+import StabilityException, ConvergenceException, MemoryException
 
-MAX_NNZ = 4_000_000_000     # 32GB VRAM
+TYPE_ALIAS = cp.float32
+
+INTEGER_TYPE = {
+    cp.float16: cp.int16,
+    cp.float32: cp.int32,
+    cp.float64: cp.int64
+}[TYPE_ALIAS]
+
+SIZEOF_TYPE = {
+    cp.float16: 2,
+    cp.float32: 4,
+    cp.float64: 8
+}[TYPE_ALIAS]
+
 K_E = 8.987551786214e9      # https://en.wikipedia.org/wiki/Coulomb%27s_law
+_, MAX_VRAM = cp.cuda.Device().mem_info
 
 def cupy_monte_carlo(args, kernel_start_event):
     """
@@ -25,7 +39,7 @@ def cupy_monte_carlo(args, kernel_start_event):
         else:
             cp.random.seed(seed)
 
-        X = cp.random.uniform(-args.bound, args.bound, size=(args.N, args.d), dtype=cp.float32)
+        X = cp.random.uniform(-args.bound, args.bound, size=(args.N, args.d), dtype=TYPE_ALIAS)
         sq_norms = cp.sum(X**2, axis=1)
         f_vals = cp.exp(-sq_norms)
 
@@ -121,14 +135,14 @@ def cupy_dcs(args, kernel_start_event):
         nx = ny = nz = args.grid_size
         total = nx * ny * nz
         
-        result = cp.empty(total, dtype=cp.float32)
+        result = cp.empty(total, dtype=TYPE_ALIAS)
         pos, q = atoms[:, :3], atoms[:, 3]
 
         for start in range(0, total, chunk):
-            idx = cp.arange(start, min(start + chunk, total), dtype=cp.int32)
-            gx = (idx % nx).astype(cp.float32)
-            gy = ((idx // nx) % ny).astype(cp.float32)
-            gz = (idx // (nx * ny)).astype(cp.float32)
+            idx = cp.arange(start, min(start + chunk, total), dtype=INTEGER_TYPE)
+            gx = (idx % nx).astype(TYPE_ALIAS)
+            gy = ((idx // nx) % ny).astype(TYPE_ALIAS)
+            gz = (idx // (nx * ny)).astype(TYPE_ALIAS)
 
             # Broadcasting: shape (chunk_size, 1) - shape (1, particle_count)
             # shape (chunk_size, particle_count)
@@ -137,7 +151,7 @@ def cupy_dcs(args, kernel_start_event):
             dz = gz[:, None] - pos[None, :, 2]
             r = cp.sqrt(dx*dx + dy*dy + dz*dz)
 
-            contrib = cp.true_divide(q[None, :], r, out=cp.zeros_like(r, dtype=cp.float32), where=(r > 0))
+            contrib = cp.true_divide(q[None, :], r, out=cp.zeros_like(r, dtype=TYPE_ALIAS), where=(r > 0))
             result[start:start + len(idx)] = k_e * contrib.sum(axis=1)
 
         return result.reshape(nz, ny, nx)
@@ -253,7 +267,7 @@ def cupy_spmv(args, kernel_start_event):
 
     print(f"\nAmount of iterations:       {args.iterations}")
 
-    import cupyx.scipy.sparse as csp
+    from cupyx.scipy.sparse import csr_matrix
 
     def kernel(A_csr, x):
         for _ in range(args.iterations):
@@ -265,20 +279,23 @@ def cupy_spmv(args, kernel_start_event):
     N = 300_000
     density = 0.01
     nnz = round(N * N * density)
-    if nnz > MAX_NNZ:
-        raise ValueError(
-            f"ERROR: Requested matrix would contain {nnz:,} nonzeros.\n"
-            f"Maximum allowed is {MAX_NNZ:,}."
+
+    total_bytes = (2*nnz*SIZEOF_TYPE) + ((N+1)*SIZEOF_TYPE) + (3*nnz*SIZEOF_TYPE)
+    if (total_bytes) > MAX_VRAM:
+        raise MemoryException(
+            f"ERROR: Requested matrix would require {total_bytes/1024**3} GB.\n"
+            f"Device total is {MAX_VRAM} GB."
         )
+    print(f"Total VRAM usage: {total_bytes/1024**3} GB")
 
     cp.random.seed(42)
 
-    rows = cp.random.randint(0, N, size=nnz, dtype=cp.int32)
-    cols = cp.random.randint(0, N, size=nnz, dtype=cp.int32)
-    vals = cp.random.rand(nnz, dtype=cp.float32)
+    rows = cp.random.randint(0, N, size=nnz, dtype=INTEGER_TYPE)
+    cols = cp.random.randint(0, N, size=nnz, dtype=INTEGER_TYPE)
+    data = cp.random.rand(nnz, dtype=TYPE_ALIAS)
 
-    A = csp.coo_matrix((vals, (rows, cols)), shape=(N, N)).tocsr()
-    x = cp.random.rand(N, dtype=cp.float32)
+    A = csr_matrix((data, (rows, cols)), shape=(N, N))
+    x = cp.random.rand(N, dtype=TYPE_ALIAS)
 
     cp.cuda.Stream.null.synchronize()
 
@@ -347,7 +364,7 @@ def cupy_stencil(args, kernel_start_event):
     X, Y, Z = cp.meshgrid(x, y, z)
 
     # Laplacian kernel
-    kernel_array = cp.zeros((3, 3, 3), dtype=cp.float32)
+    kernel_array = cp.zeros((3, 3, 3), dtype=TYPE_ALIAS)
 
     # Above, below (z-axis)
     kernel_array[0, 1, 1] = 1
