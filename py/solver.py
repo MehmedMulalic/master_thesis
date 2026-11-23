@@ -57,14 +57,14 @@ def parse_args():
     parser.add_argument(
         "--N",
         type=int,
-        default=100,
+        default=50_000,
         help="Problem size N for the Monte Carlo integration. Default is 100.",
     )
 
     parser.add_argument(
         "--d",
         type=int,
-        default=10,
+        default=50,
         help="Dimension d for the Monte Carlo integration. Default is 10.",
     )
 
@@ -80,7 +80,7 @@ def parse_args():
     parser.add_argument(
         "--maxiter",
         type=int,
-        default=1000,
+        default=5_000,
         help="Maximum number of iterations for the Conjugate Gradient. " \
             "Default is 1000.",
     )
@@ -96,7 +96,7 @@ def parse_args():
     parser.add_argument(
         "--particle-count",
         type=int,
-        default=100,
+        default=5_000,
         help="Amount of particles for the DCS. Default is 100."
     )
 
@@ -128,9 +128,9 @@ def monitor(queue, stop_event, ready_event, kernel_start_event):
     handle = pynvml.nvmlDeviceGetHandleByIndex(0)
 
     queue.put({
-        "type"  : "gpu_stats",
-        "name"  : pynvml.nvmlDeviceGetName(handle),
-        "driver": pynvml.nvmlSystemGetDriverVersion(),
+        "type"    : "gpu_stats",
+        "name"    : pynvml.nvmlDeviceGetName(handle),
+        "driver"  : pynvml.nvmlSystemGetDriverVersion(),
     })
 
     gpu_samples = []
@@ -161,10 +161,10 @@ def monitor(queue, stop_event, ready_event, kernel_start_event):
             power_samples.append(power_mw / 1000)
             
             queue.put({
-                "type"      : "gpu",
-                "gpu"       : util.gpu,
-                "mem_used"  : mem.used,
-                "mem_total" : mem.total
+                "type"       : "gpu",
+                "gpu"        : util.gpu,
+                "mem_used"   : mem.used,
+                "mem_total"  : mem.total
             })
 
             time.sleep(MONITOR_INTERVAL)
@@ -243,7 +243,7 @@ def workload(queue, args, kernel_start_event):
 def print_workload_(message):
     print("\r" + " " * 100 + "\r", end="")
     print("\nGPU Summary:")
-    print(f"  - Runtime:    {message['runtime_ms']:2.4f} ms\n")
+    print(f"  - Runtime:    {message['runtime_ms']:,.3f} ms\n")
 
 def print_gpu_(message):
     gpu = message["gpu"]
@@ -268,16 +268,16 @@ def print_validate_(message):
     difference = abs(cpu_result - gpu_result)
     
     print("\n\nResult Validity:")
-    print(f" - CPU result: {cpu_result:2.3f}")
-    print(f" - GPU result: {gpu_result:2.3f}")
-    print(f" - Difference: {difference:2.3f}")
+    print(f" - CPU result  :  {cpu_result:2.3f}")
+    print(f" - GPU result  :  {gpu_result:2.3f}")
+    print(f" - Difference  :  {difference:2.3f}")
 
 
 if __name__ == "__main__":
     args = parse_args()
 
-    print(f"Framework:      {FRAMEWORKS[args.framework]}")
-    print(f"Workload:       {NUM_METHOD[args.workload]}")
+    print(f"Framework  :    {FRAMEWORKS[args.framework]}")
+    print(f"Workload   :    {NUM_METHOD[args.workload]}")
     print()
 
     queue = mp.Queue()
@@ -305,8 +305,8 @@ if __name__ == "__main__":
         while message is not None:
             if message["type"] == "gpu_stats":
                 print(
-                    f"GPU name:       {message['name']}\n"
-                    f"Driver version: {message['driver']}"
+                    f"GPU name        :    {message['name']}\n"
+                    f"Driver version  :    {message['driver']}"
                 )
             
             elif message["type"] == "validate":
@@ -347,12 +347,12 @@ if __name__ == "__main__":
 
         if message["type"] == "gpu_summary":
             print()
-            print(f"Max GPU Utilization:    {message['gpu_max']:.2f} %")
-            print(f"Avg GPU Utilization:    {message['gpu_avg']:.2f} %")
-            print(f"Max Memory Utilization: {message['mem_util_max']:.2f} %")
-            print(f"Avg Memory Utilization: {message['mem_util_avg']:.2f} %")
-            print(f"Max Power:              {message['power_max']:.2f} W")
-            print(f"Avg Power:              {message['power_avg']:.2f} W")
-            print(f"Number of Samples:      {message['num_samples']}")
+            print(f"Max GPU Utilization     :    {message['gpu_max']:.2f}%")
+            print(f"Avg GPU Utilization     :    {message['gpu_avg']:.2f}%")
+            print(f"Max Memory Utilization  :    {message['mem_util_max']:.2f}%")
+            print(f"Avg Memory Utilization  :    {message['mem_util_avg']:.2f}%")
+            print(f"Max Power               :    {message['power_max']:.2f} W")
+            print(f"Avg Power               :    {message['power_avg']:.2f} W")
+            print(f"Number of Samples       :    {message['num_samples']}")
 
     print()

@@ -20,9 +20,10 @@ K_E = 8.987551786214e9      # https://en.wikipedia.org/wiki/Coulomb%27s_law
 ALPHA = 1.6563e-4           # Thermal diffusivity of pure silver (99.9%) (m^2/s)
 DT = 0.0003                 # Time step (s)
 
+#* This might not be needed since solver.py queries this
 def check_memory_usage_(array_size):
-    free, _ = cp.cuda.Device().mem_info
-    print(f"Free VRAM: {free/1024**2:,} MB")
+    free, total = cp.cuda.Device().mem_info
+    print(f"Free VRAM: {free/1024**2:,} ({100 * free/total:.2f}%) MB")
     
     safety_margin = 1.2
     required_bytes = SIZEOF_TYPE * array_size * safety_margin
@@ -94,8 +95,8 @@ def cupy_monte_carlo(args, kernel_start_event):
     """
 
     print()
-    print(f"Problem size N:     {args.N:,}")
-    print(f"Dimension d:        {args.d:,}")
+    print(f"Problem size N  :    {args.N:>10,}")
+    print(f"Dimension d     :    {args.d:>10,}")
 
     check_memory_usage_(args.N*args.d)
 
@@ -137,20 +138,20 @@ def cupy_monte_carlo(args, kernel_start_event):
 def cupy_conjugate_gradient(args, kernel_start_event):
     """
     Implementation which uses Conjugate Gradient to solve -d^2u/dx^2 = sin(pi * x) with
-    Dirichlet boundary conditions, u(0) = u(1) = 1, whose exact solution is known to be u = sin(pi*x) / pi**2.
+    Dirichlet boundary conditions, u(0) = u(1) = 0, whose exact solution is known to be u = sin(pi*x) / pi**2.
     
     Initial x is set to 0.
     1. Build the sparse Laplacian matrix A
-    2. Calculate the solution b
-    3. Iterate until convergence
+    2. Calculate the right-hand-side vector b = sin(pi * x)
+    3. Apply CG to solve A*x = b until convergence
     """
 
     from cupyx.scipy.sparse import diags as sparse_diags
     from cupyx.scipy.sparse.linalg import cg
 
     print()
-    print(f"Problem size N:             {args.N:,}")
-    print(f"Maximum iteration count:    {args.maxiter:,}")
+    print(f"Problem size N           :    {args.N:>10,}")
+    print(f"Maximum iteration count  :    {args.maxiter:>10,}")
 
     check_memory_usage_(args.N*6)
 
@@ -208,8 +209,8 @@ def cupy_dcs(args, kernel_start_event):
     """
 
     print()
-    print(f"Grid size:              [{args.grid_size}, {args.grid_size}, {args.grid_size}]")
-    print(f"Number of particles:    {args.particle_count:,}")
+    print(f"Grid size            :    [{args.grid_size}, {args.grid_size}, {args.grid_size}]")
+    print(f"Number of particles  :    {args.particle_count:,}")
 
     check_memory_usage_(args.particle_count*4)
 
@@ -287,7 +288,7 @@ def cupy_spectral(args, kernel_start_event):
 
     from cupyx.scipy.fft import dctn, idctn
 
-    print(f"\nGrid size:              [{args.grid_size}, {args.grid_size}, {args.grid_size}]")
+    print(f"\nGrid size:    [{args.grid_size}, {args.grid_size}, {args.grid_size}]")
 
     array_size = (args.N*3) + (args.N**2 * 4)
     check_memory_usage_(array_size)
@@ -354,8 +355,8 @@ def cupy_spmv(args, kernel_start_event):
     from cupyx.scipy.sparse import diags, identity, kron
 
     print()
-    print(f"Grid size:               [{args.grid_size}, {args.grid_size}, {args.grid_size}]")
-    print(f"Number of iterations:    {args.iterations:,}")
+    print(f"Grid size             :    [{args.grid_size}, {args.grid_size}, {args.grid_size}]")
+    print(f"Number of iterations  :    {args.iterations:,}")
 
     check_memory_usage_(args.grid_size**6 + args.grid_size**3)
 
@@ -427,7 +428,7 @@ def cupy_stencil(args, kernel_start_event):
 
     from cupyx.scipy.ndimage import convolve
 
-    print(f"\nGrid size:              [{args.grid_size}, {args.grid_size}, {args.grid_size}]")
+    print(f"\nGrid size:    [{args.grid_size}, {args.grid_size}, {args.grid_size}]")
 
     def kernel(u, kernel_array, num_steps, alpha, dt):
         for _ in range(num_steps):
