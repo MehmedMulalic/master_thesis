@@ -1,2 +1,0 @@
-class MemoryException(Exception):
-    pass

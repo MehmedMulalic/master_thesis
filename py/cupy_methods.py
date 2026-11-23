@@ -1,6 +1,6 @@
 import cupy as cp
 import numpy as np
-import StabilityException, ConvergenceException, MemoryException
+import StabilityException, ConvergenceException
 
 TYPE_ALIAS = cp.float32
 
@@ -19,20 +19,19 @@ SIZEOF_TYPE = {
 K_E = 8.987551786214e9      # https://en.wikipedia.org/wiki/Coulomb%27s_law
 ALPHA = 1.6563e-4           # Thermal diffusivity of pure silver (99.9%) (m^2/s)
 DT = 0.0003                 # Time step (s)
-_, MAX_VRAM = cp.cuda.Device().mem_info
 
-def check_memory_usage_(array_size, value_type):
-    free, total = cp.cuda.Device().mem_info
-    print(f"Freem VRAM: {free/1024**2} MB")
+def check_memory_usage_(array_size):
+    free, _ = cp.cuda.Device().mem_info
+    print(f"Free VRAM: {free/1024**2} MB")
     
     safety_margin = 1.2
-    value_bytes = SIZEOF_TYPE(value_type)
-    required_bytes = array_size * value_bytes * safety_margin
+    required_bytes = SIZEOF_TYPE * array_size * safety_margin
 
-    if required_bytes < free:
-        raise MemoryException(
-            f"ERROR: Requested parameter requires {required_bytes/1024**2} MB.\n"
-            f"Currently free amount is {total/1024**2} MB."
+    if required_bytes > free:
+        raise MemoryError(
+            f"ERROR: Requested parameter\n"
+            f"REQUIRES: {required_bytes/1024**2} MB. Currently\n"
+            f"AVAILABLE: {free/1024**2} MB."
         )
 
 def init_heat_equation_(args, stability=True):
@@ -98,7 +97,7 @@ def cupy_monte_carlo(args, kernel_start_event):
     print(f"Problem size N:     {args.N}")
     print(f"Dimension d:        {args.d}")
 
-    check_memory_usage_(args.N*args.d, TYPE_ALIAS)
+    check_memory_usage_(args.N*args.d)
 
     def kernel(seed=None):
         if seed is None:
@@ -151,7 +150,7 @@ def cupy_conjugate_gradient(args, kernel_start_event):
     print(f"Problem size N:             {args.N}")
     print(f"Maximum iteration count:    {args.maxiter}")
 
-    check_memory_usage_(args.N*6, TYPE_ALIAS)
+    check_memory_usage_(args.N*6)
 
     # Laplacian representation with spacing h
     # -d^2u/dx^2 = -u[i-1] + 2u[i] - u[i+1], thus off-diagonals are -1 and diagonals are 2
@@ -284,7 +283,7 @@ def cupy_spectral(args, kernel_start_event):
     print(f"\nGrid size:              [{args.grid_size}, {args.grid_size}, {args.grid_size}]")
 
     array_size = (args.N*3) + (args.N**2 * 4)
-    check_memory_usage_(array_size, TYPE_ALIAS)
+    check_memory_usage_(array_size)
 
     def kernel(u0, k_squared, num_steps, alpha, dt):
         u_hat = dctn(u0)
@@ -351,7 +350,7 @@ def cupy_spmv(args, kernel_start_event):
     print(f"Grid size:               [{args.grid_size}, {args.grid_size}, {args.grid_size}]")
     print(f"Number of iterations:    {args.iterations}")
 
-    check_memory_usage_(args.grid_size**6 + args.grid_size**3, TYPE_ALIAS)
+    check_memory_usage_(args.grid_size**6 + args.grid_size**3)
 
     def init_sparse_laplacian_array_(n, dx):
         lower  = cp.ones(n-1, dtype=TYPE_ALIAS)
