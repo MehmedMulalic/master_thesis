@@ -174,15 +174,20 @@ def cupy_conjugate_gradient(args, kernel_start_event):
 def cupy_dcs(args, kernel_start_event):
     """
     Implementation of the Direct Coulomb Summation.
-    Due to a large 3D grid, batch processing is required with a default value of 65,536.
+    Due to a large 3D grid, batch processing is required with a default batch size of 65,536.
+    Atoms are defined as an array [x, y, z, q] where x, y, z represent the position and q is the charge.
 
-    Defines atoms as an array of [x, y, z, q] where x, y, z are the position and q is the charge.
+    The implementation uses NumPy's RNG Generator for deterministic values with a seed of 42.
+    To provide equal data across frameworks, the host generates the values with NumPy which are
+    then communicated to the device.
+
+    The algorithm is defined with the following steps:
     1. Sample random atom values
-    2. Calculate U = k_e * (Ei qi/ri)
+    2. Calculate U = k_e * (∑_i q_i / r_i)
     """
 
     print(f"\nGrid size:              [{args.grid_size}, {args.grid_size}, {args.grid_size}]")
-    print(f"Amount of particles:    {args.particle_count}")
+    print(f"Number of particles:    {args.particle_count}")
 
     def kernel(atoms, chunk=1 << 16, k_e=K_E):
         nx = ny = nz = args.grid_size
