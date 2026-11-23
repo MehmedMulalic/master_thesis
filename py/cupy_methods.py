@@ -106,7 +106,9 @@ def cupy_monte_carlo(args, kernel_start_event):
             cp.random.seed(seed)
 
         X = cp.random.uniform(-args.bound, args.bound, size=(args.N, args.d), dtype=TYPE_ALIAS)
-        sq_norms = cp.sum(X**2, axis=1)
+        cp.square(X, out=X)
+
+        sq_norms = cp.sum(X, axis=1)
         f_vals = cp.exp(-sq_norms)
 
         volume = (2 * args.bound) ** args.d
