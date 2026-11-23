@@ -80,7 +80,8 @@ def cupy_monte_carlo(args, kernel_start_event):
     4. MC estimator
     """
 
-    print(f"\nProblem size N:     {args.N}")
+    print()
+    print(f"Problem size N:     {args.N}")
     print(f"Dimension d:        {args.d}")
 
     def kernel(seed=None):
@@ -130,7 +131,8 @@ def cupy_conjugate_gradient(args, kernel_start_event):
     from cupyx.scipy.sparse import diags as sparse_diags
     from cupyx.scipy.sparse.linalg import cg
 
-    print(f"\nProblem size N:             {args.N}")
+    print()
+    print(f"Problem size N:             {args.N}")
     print(f"Maximum iteration count:    {args.maxiter}")
 
     # Laplacian representation with spacing h
@@ -186,7 +188,8 @@ def cupy_dcs(args, kernel_start_event):
     2. Calculate U = k_e * (∑_i q_i / r_i)
     """
 
-    print(f"\nGrid size:              [{args.grid_size}, {args.grid_size}, {args.grid_size}]")
+    print()
+    print(f"Grid size:              [{args.grid_size}, {args.grid_size}, {args.grid_size}]")
     print(f"Number of particles:    {args.particle_count}")
 
     def kernel(atoms, chunk=1 << 16, k_e=K_E):
@@ -318,9 +321,11 @@ def cupy_spmv(args, kernel_start_event):
     Stability, for equal spacing, is defined as r = alpha*dt / spacing^2 for which, in 3D, must be r <= 1/6.
     """
 
-    print(f"\nAmount of iterations:       {args.iterations}")
-
     from cupyx.scipy.sparse import diags, identity, kron
+
+    print()
+    print(f"Grid size:               [{args.grid_size}, {args.grid_size}, {args.grid_size}]")
+    print(f"Number of iterations:    {args.iterations}")
 
     def init_sparse_laplacian_array_(n, dx):
         lower  = cp.ones(n-1, dtype=TYPE_ALIAS)
