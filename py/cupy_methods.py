@@ -21,6 +21,20 @@ ALPHA = 1.6563e-4           # Thermal diffusivity of pure silver (99.9%) (m^2/s)
 DT = 0.0003                 # Time step (s)
 _, MAX_VRAM = cp.cuda.Device().mem_info
 
+def check_memory_usage_(array_size, value_type):
+    free, total = cp.cuda.Device().mem_info
+    print(f"Freem VRAM: {free/1024**2} MB")
+    
+    safety_margin = 1.2
+    value_bytes = SIZEOF_TYPE(value_type)
+    required_bytes = array_size * value_bytes * safety_margin
+
+    if required_bytes < free:
+        raise MemoryException(
+            f"ERROR: Requested parameter requires {required_bytes/1024**2} MB.\n"
+            f"Currently free amount is {total/1024**2} MB."
+        )
+
 def init_heat_equation_(args, stability=True):
     A = 100.0                       # Peak temperature (°C)
     sigma_initial = 0.2             # Initial width (m)
@@ -84,6 +98,8 @@ def cupy_monte_carlo(args, kernel_start_event):
     print(f"Problem size N:     {args.N}")
     print(f"Dimension d:        {args.d}")
 
+    check_memory_usage_(args.N*args.d, TYPE_ALIAS)
+
     def kernel(seed=None):
         if seed is None:
             cp.random.seed()
@@ -134,6 +150,8 @@ def cupy_conjugate_gradient(args, kernel_start_event):
     print()
     print(f"Problem size N:             {args.N}")
     print(f"Maximum iteration count:    {args.maxiter}")
+
+    check_memory_usage_(args.N*6, TYPE_ALIAS)
 
     # Laplacian representation with spacing h
     # -d^2u/dx^2 = -u[i-1] + 2u[i] - u[i+1], thus off-diagonals are -1 and diagonals are 2
@@ -192,6 +210,8 @@ def cupy_dcs(args, kernel_start_event):
     print(f"Grid size:              [{args.grid_size}, {args.grid_size}, {args.grid_size}]")
     print(f"Number of particles:    {args.particle_count}")
 
+    # check_memory_usage_(, TYPE_ALIAS)
+
     def kernel(atoms, chunk=1 << 16, k_e=K_E):
         nx = ny = nz = args.grid_size
         total = nx * ny * nz
@@ -219,6 +239,7 @@ def cupy_dcs(args, kernel_start_event):
 
     rng = np.random.default_rng(42)
 
+    #* this might cause host errors (not enough RAM)
     atoms = np.empty((args.particle_count, 4), dtype=np.float32)
     atoms[:, :3] = rng.integers(0, args.grid_size, size=(args.particle_count, 3), endpoint=True)
     atoms[:, 3] = rng.uniform(-5e-6, 5e-6, size=args.particle_count)
@@ -260,7 +281,10 @@ def cupy_spectral(args, kernel_start_event):
 
     from cupyx.scipy.fft import dctn, idctn
 
-    print(f"\nGrid size:          [{args.grid_size}, {args.grid_size}, {args.grid_size}]")
+    print(f"\nGrid size:              [{args.grid_size}, {args.grid_size}, {args.grid_size}]")
+
+    array_size = (args.N*3) + (args.N**2 * 4)
+    check_memory_usage_(array_size, TYPE_ALIAS)
 
     def kernel(u0, k_squared, num_steps, alpha, dt):
         u_hat = dctn(u0)
@@ -326,6 +350,8 @@ def cupy_spmv(args, kernel_start_event):
     print()
     print(f"Grid size:               [{args.grid_size}, {args.grid_size}, {args.grid_size}]")
     print(f"Number of iterations:    {args.iterations}")
+
+    check_memory_usage_(args.grid_size**6 + args.grid_size**3, TYPE_ALIAS)
 
     def init_sparse_laplacian_array_(n, dx):
         lower  = cp.ones(n-1, dtype=TYPE_ALIAS)

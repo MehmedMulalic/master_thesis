@@ -23,6 +23,7 @@ NUM_METHOD = {
     "stencil"   : "Stencil",
 }
 
+#TODO: t_final could be added as an argument for the heat equation
 def parse_args():
     parser = ArgumentParser(
         description="Run the multi-framework GPU solver.",
