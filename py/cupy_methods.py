@@ -310,6 +310,8 @@ def cupy_spectral(args, kernel_start_event):
 def cupy_spmv(args, kernel_start_event):
     """
     Calculates the heat equation through sparse matrix vector multiplication y = ax.
+    Assumes equal spacing in all three dimensions (dx=dy=dz). Will not work for unequal spacing.
+
     The equation is defined as u_{n+1} = M * u_{n} where M is the sparse matrix defined as
     M = (I + alpha * delta t * laplacian) * u_n, where u_n is the flattened temperature field vector.
 
