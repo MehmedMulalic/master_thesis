@@ -211,7 +211,7 @@ def cupy_dcs(args, kernel_start_event):
     print(f"Grid size:              [{args.grid_size}, {args.grid_size}, {args.grid_size}]")
     print(f"Number of particles:    {args.particle_count:,}")
 
-    # check_memory_usage_(, TYPE_ALIAS)
+    check_memory_usage_(args.particle_count*4)
 
     def kernel(atoms, chunk=1 << 16, k_e=K_E):
         nx = ny = nz = args.grid_size
@@ -233,7 +233,12 @@ def cupy_dcs(args, kernel_start_event):
             dz = gz[:, None] - pos[None, :, 2]
             r = cp.sqrt(dx*dx + dy*dy + dz*dz)
 
-            contrib = cp.true_divide(q[None, :], r, out=cp.zeros_like(r, dtype=TYPE_ALIAS), where=(r > 0))
+            mask = r > 0
+            q_broadcast = cp.broadcast_to(q[None, :], r.shape)
+
+            contrib = cp.zeros_like(r, dtype=TYPE_ALIAS)
+            contrib[mask] = q_broadcast[mask] / r[mask]
+
             result[start:start + len(idx)] = k_e * contrib.sum(axis=1)
 
         return result.reshape(nz, ny, nx)
