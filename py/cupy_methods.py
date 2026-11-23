@@ -22,7 +22,7 @@ DT = 0.0003                 # Time step (s)
 
 def check_memory_usage_(array_size):
     free, _ = cp.cuda.Device().mem_info
-    print(f"Free VRAM: {free/1024**2} MB")
+    print(f"Free VRAM: {free/1024**2:,} MB")
     
     safety_margin = 1.2
     required_bytes = SIZEOF_TYPE * array_size * safety_margin
@@ -30,8 +30,8 @@ def check_memory_usage_(array_size):
     if required_bytes > free:
         raise MemoryError(
             f"ERROR: Requested parameter\n"
-            f"REQUIRES: {required_bytes/1024**2} MB. Currently\n"
-            f"AVAILABLE: {free/1024**2} MB."
+            f"REQUIRES: {required_bytes/1024**2:,} MB. Currently\n"
+            f"AVAILABLE: {free/1024**2:,} MB."
         )
 
 def init_heat_equation_(args, stability=True):
@@ -94,8 +94,8 @@ def cupy_monte_carlo(args, kernel_start_event):
     """
 
     print()
-    print(f"Problem size N:     {args.N}")
-    print(f"Dimension d:        {args.d}")
+    print(f"Problem size N:     {args.N:,}")
+    print(f"Dimension d:        {args.d:,}")
 
     check_memory_usage_(args.N*args.d)
 
@@ -149,8 +149,8 @@ def cupy_conjugate_gradient(args, kernel_start_event):
     from cupyx.scipy.sparse.linalg import cg
 
     print()
-    print(f"Problem size N:             {args.N}")
-    print(f"Maximum iteration count:    {args.maxiter}")
+    print(f"Problem size N:             {args.N:,}")
+    print(f"Maximum iteration count:    {args.maxiter:,}")
 
     check_memory_usage_(args.N*6)
 
@@ -209,7 +209,7 @@ def cupy_dcs(args, kernel_start_event):
 
     print()
     print(f"Grid size:              [{args.grid_size}, {args.grid_size}, {args.grid_size}]")
-    print(f"Number of particles:    {args.particle_count}")
+    print(f"Number of particles:    {args.particle_count:,}")
 
     # check_memory_usage_(, TYPE_ALIAS)
 
@@ -350,7 +350,7 @@ def cupy_spmv(args, kernel_start_event):
 
     print()
     print(f"Grid size:               [{args.grid_size}, {args.grid_size}, {args.grid_size}]")
-    print(f"Number of iterations:    {args.iterations}")
+    print(f"Number of iterations:    {args.iterations:,}")
 
     check_memory_usage_(args.grid_size**6 + args.grid_size**3)
 
