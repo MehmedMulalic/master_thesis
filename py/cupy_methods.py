@@ -52,19 +52,19 @@ def init_laplacian_array_(dx):
     kernel_array = cp.zeros((3, 3, 3), dtype=TYPE_ALIAS)
 
     # Above, below (z-axis)
-    kernel_array[0, 1, 1] = 1
-    kernel_array[2, 1, 1] = 1
+    kernel_array[0, 1, 1] = 1.0
+    kernel_array[2, 1, 1] = 1.0
 
     # Up, down (y-axis)
-    kernel_array[1, 0, 1] = 1
-    kernel_array[1, 2, 1] = 1
+    kernel_array[1, 0, 1] = 1.0
+    kernel_array[1, 2, 1] = 1.0
 
     # Left, right (x-axis)
-    kernel_array[1, 1, 0] = 1
-    kernel_array[1, 1, 2] = 1
+    kernel_array[1, 1, 0] = 1.0
+    kernel_array[1, 1, 2] = 1.0
 
     # Center
-    kernel_array[1, 1, 1] = -6
+    kernel_array[1, 1, 1] = -6.0
     kernel_array /= dx**2
 
     return kernel_array
