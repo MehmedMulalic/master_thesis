@@ -52,9 +52,9 @@ def init_heat_equation_(args, stability=True):
     if (r > 1/6) and stability:     # Coefficient for 3D space
         raise StabilityException(f"Unstable simulation; must be below 0.167. Current r: {r}")
 
-    x = cp.linspace(0.0, Lx, nx)
-    y = cp.linspace(0.0, Ly, ny)
-    z = cp.linspace(0.0, Lz, nz)
+    x = cp.linspace(0.0, Lx, nx, dtype=TYPE_ALIAS)
+    y = cp.linspace(0.0, Ly, ny, dtype=TYPE_ALIAS)
+    z = cp.linspace(0.0, Lz, nz, dtype=TYPE_ALIAS)
     X, Y, Z = cp.meshgrid(x, y, z)
 
     # Initial condition (Gaussian bump)
@@ -167,7 +167,7 @@ def cupy_conjugate_gradient(args, kernel_start_event):
 
     # Grid skips the 0 boundary values
     # Au = sin(pi * x); b = sin(pi * x); Au = b
-    grid = cp.linspace(0, 1, args.N + 2)[1:-1]
+    grid = cp.linspace(0, 1, args.N + 2, dtype=TYPE_ALIAS)[1:-1]
     b = cp.sin(cp.pi * grid)
 
     # Kernel
