@@ -214,32 +214,41 @@ def workload(queue, args, kernel_start_event):
         }
 
     implementation = workload_map[args.workload]
-    runtime, result = implementation(args, kernel_start_event)
+    try:
+        runtime, result = implementation(args, kernel_start_event)
 
-    if args.validate:
-        from numpy_methods import (
-            numpy_theoretical_mc, numpy_cg, numpy_dcs,
-            numpy_spectral, numpy_spmv, numpy_stencil
-        )
+        if args.validate:
+            from numpy_methods import (
+                numpy_theoretical_mc, numpy_cg, numpy_dcs,
+                numpy_spectral, numpy_spmv, numpy_stencil
+            )
 
-        numpy_workload_map = {
-            "mc": numpy_theoretical_mc,
-            "cg": numpy_cg,
-            "spectral": numpy_spectral
-        }
+            numpy_workload_map = {
+                "mc": numpy_theoretical_mc,
+                "cg": numpy_cg,
+                "spectral": numpy_spectral
+            }
 
-        expected = numpy_workload_map[args.workload](args)
+            expected = numpy_workload_map[args.workload](args)
+
+            queue.put({
+                "type": "validate",
+                "cpu_result": expected,
+                "gpu_result": result,
+            })
 
         queue.put({
-            "type": "validate",
-            "cpu_result": expected,
-            "gpu_result": result,
+            "type": "workload",
+            "runtime_ms": runtime
         })
-
-    queue.put({
-        "type": "workload",
-        "runtime_ms": runtime
-    })
+    except Exception as e: #! Treba dodati u __main__ zaseban check ako se desi neki error
+        print(f"An unknown error occured: {e}")
+        traceback.print_exc()
+        
+        queue.put({
+            "type": "error",
+            "message": "An unknown error occured"
+        })
 
 def print_workload_(message):
     print("\r" + " " * 100 + "\r", end="")
