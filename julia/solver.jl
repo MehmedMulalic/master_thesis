@@ -1,4 +1,4 @@
-# env -u LD_LIBRARY_PATH julia --project=. solver.jl --workload X
+# Run with the following: env -u LD_LIBRARY_PATH julia --project=. solver.jl --workload X
 include("JuliaMethods.jl")
 
 using .JuliaMethods

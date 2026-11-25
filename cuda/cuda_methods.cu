@@ -1,3 +1,4 @@
+// Run with the following: nvcc cuda/cuda_methods.cu -lcusparse -lcufft -o output
 /*
  * Taken inspiration from the following GitHub repository:
  * https://github.com/NVIDIA/CUDALibrarySamples/
