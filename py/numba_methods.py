@@ -502,3 +502,9 @@ def numba_stencil(args, kernel_start_event):
     sum_total = cp_sum(u_gpu.copy_to_host()).item()
 
     return elapsed, sum_total
+
+if __name__ == "__main__":
+    raise SystemExit(
+        "ERROR: this module is not intended to be executed directly.\n"
+        "Please run solver.py instead."
+    )
