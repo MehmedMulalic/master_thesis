@@ -1,13 +1,18 @@
 from argparse import ArgumentParser
 from queue import Empty
+from datetime import datetime
+from pathlib import Path
 import multiprocessing as mp
 import pynvml
+import logging
+import sys
+import traceback
 import time
 from exceptions import StabilityException, ConvergenceException
 
 #!ISSUE: validation obfuscates results; samples are procuring during validation.
 #! This means that there are empty values at the end of the stopwatch.
-
+LOG_FILE = Path(__file__).resolve().parent / "solver.log"
 MONITOR_INTERVAL = 0.01
 
 FRAMEWORKS = {
@@ -23,6 +28,16 @@ NUM_METHOD = {
     "spmv"      : "Sparse Matrix-Vector Multiplication",
     "stencil"   : "Stencil",
 }
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+    handlers=[
+        logging.StreamHandler(sys.stdout),
+        logging.FileHandler(LOG_FILE, mode="a", encoding="utf-8")
+    ]
+)
 
 #TODO: t_final could be added as an argument for the heat equation
 def parse_args():
@@ -272,7 +287,7 @@ def print_gpu_(message):
         flush=True
     )
 
-def print_validate_(message):
+def print_validate_(message): #! ovo treba staviti u logging
     cpu_result = message['cpu_result']
     gpu_result = message['gpu_result']
     difference = abs(cpu_result - gpu_result)
@@ -287,6 +302,9 @@ if __name__ == "__main__":
     args = parse_args()
     mp.set_start_method("spawn")
 
+    logging.info("\n" + "#"*40 + "\n")
+    logging.info(f"Framework  :    {FRAMEWORKS[args.framework]}")
+    logging.info(f"Workload   :    {NUM_METHOD[args.workload]}\n")
 
     queue = mp.Queue()
     stop_event = mp.Event()
@@ -300,6 +318,12 @@ if __name__ == "__main__":
     ready_event.wait()
     workload_process.start()
 
+    logging.info(f"Timestamp       : {datetime.now()}")
+    logging.info(f"Exec Arguments  : {sys.argv}")
+    logging.info(f"Workload PID    : {workload_process.pid}")
+    logging.info(f"Parent PID      : {mp.current_process().pid}")
+    logging.info(f"Process         : {mp.current_process().name}")
+
     gpu = 0
     mem_used = 0
     mem_total = 0
@@ -312,10 +336,8 @@ if __name__ == "__main__":
 
         while message is not None:
             if message["type"] == "gpu_stats":
-                print(
-                    f"GPU name        :    {message['name']}\n"
-                    f"Driver version  :    {message['driver']}"
-                )
+                logging.info(f"GPU name        :    {message['name']}")
+                logging.info(f"Driver version  :    {message['driver']}")
             
             elif message["type"] == "validate":
                 print_validate_(message)
@@ -354,13 +376,12 @@ if __name__ == "__main__":
             break
 
         if message["type"] == "gpu_summary":
-            print()
-            print(f"Max GPU Utilization     :    {message['gpu_max']:.2f}%")
-            print(f"Avg GPU Utilization     :    {message['gpu_avg']:.2f}%")
-            print(f"Max Memory Utilization  :    {message['mem_util_max']:.2f}%")
-            print(f"Avg Memory Utilization  :    {message['mem_util_avg']:.2f}%")
-            print(f"Max Power               :    {message['power_max']:.2f} W")
-            print(f"Avg Power               :    {message['power_avg']:.2f} W")
-            print(f"Number of Samples       :    {message['num_samples']}")
+            logging.info()
+            logging.info(f"Max GPU Utilization     :    {message['gpu_max']:.2f}%")
+            logging.info(f"Avg GPU Utilization     :    {message['gpu_avg']:.2f}%")
+            logging.info(f"Max Memory Utilization  :    {message['mem_util_max']:.2f}%")
+            logging.info(f"Avg Memory Utilization  :    {message['mem_util_avg']:.2f}%")
+            logging.info(f"Max Power               :    {message['power_max']:.2f} W")
+            logging.info(f"Avg Power               :    {message['power_avg']:.2f} W")
+            logging.info(f"Number of Samples       :    {message['num_samples']}")
 
-    print()
