@@ -1,3 +1,4 @@
+import nvtx
 import cupy as cp
 import numpy as np
 from exceptions import StabilityException, ConvergenceException
@@ -36,6 +37,7 @@ def check_memory_usage_(array_size):
         )
 
 def init_heat_equation_(args, stability=True):
+    """Defines inital values for numerical methods which solve the heat equation."""
     A = 100.0                       # Peak temperature (°C)
     sigma_initial = 0.2             # Initial width (m)
 
@@ -55,7 +57,7 @@ def init_heat_equation_(args, stability=True):
     x = cp.linspace(0.0, Lx, nx, dtype=TYPE_ALIAS)
     y = cp.linspace(0.0, Ly, ny, dtype=TYPE_ALIAS)
     z = cp.linspace(0.0, Lz, nz, dtype=TYPE_ALIAS)
-    X, Y, Z = cp.meshgrid(x, y, z)
+    X, Y, Z = cp.meshgrid(x, y, z, dtype=TYPE_ALIAS)
 
     # Initial condition (Gaussian bump)
     u0 = A * cp.exp( -((X - x0)**2 + (Y - y0)**2 + (Z - z0)**2) / (2 * sigma_initial**2) )
@@ -83,6 +85,7 @@ def init_laplacian_array_(dx):
 
     return kernel_array
 
+#TODO: This is too simple, needs to be changed. Maybe random walkers?
 def cupy_monte_carlo(args, kernel_start_event):
     """
     Monte Carlo integration of the Gaussian integral.
@@ -98,8 +101,9 @@ def cupy_monte_carlo(args, kernel_start_event):
     print(f"Problem size N  :    {args.N:>10,}")
     print(f"Dimension d     :    {args.d:>10,}")
 
-    check_memory_usage_(args.N*args.d)
+    # check_memory_usage_(args.N*args.d)
 
+    #! This uses device RNG
     def kernel(seed=None):
         if seed is None:
             cp.random.seed()
@@ -117,8 +121,10 @@ def cupy_monte_carlo(args, kernel_start_event):
 
         return I_estimate
 
-    _ = kernel()
-    cp.cuda.Stream.null.synchronize()
+    # Kernel
+    with nvtx.annotate("MC: Warm-Up Kernel"):
+        _ = kernel()
+        cp.cuda.Stream.null.synchronize()
 
     start = cp.cuda.Event()
     end = cp.cuda.Event()
@@ -153,27 +159,29 @@ def cupy_conjugate_gradient(args, kernel_start_event):
     print(f"Problem size N           :    {args.N:>10,}")
     print(f"Maximum iteration count  :    {args.maxiter:>10,}")
 
-    check_memory_usage_(args.N*6)
+    # check_memory_usage_(args.N*6)
 
-    # Laplacian representation with spacing h
-    # -d^2u/dx^2 = -u[i-1] + 2u[i] - u[i+1], thus off-diagonals are -1 and diagonals are 2
-    h = 1.0 / (args.N + 1)
-    main_diag = 2.0 * cp.ones(args.N)
-    off_diag = -1.0 * cp.ones(args.N - 1)
-    
-    # A = -d^2/dx^2; Au = -d^2u/dx^2
-    A = sparse_diags([off_diag, main_diag, off_diag], offsets=[-1, 0, 1], format="csr")
-    A /= (h ** 2)
+    with nvtx.annotate("CG: Value Init"):
+        # Laplacian representation with spacing h
+        # -d^2u/dx^2 = -u[i-1] + 2u[i] - u[i+1], thus off-diagonals are -1 and diagonals are 2
+        h = 1.0 / (args.N + 1)
+        main_diag = 2.0 * cp.ones(args.N, dtype=TYPE_ALIAS)
+        off_diag = -1.0 * cp.ones(args.N - 1, dtype=TYPE_ALIAS)
 
-    # Grid skips the 0 boundary values
-    # Au = sin(pi * x); b = sin(pi * x); Au = b
-    grid = cp.linspace(0, 1, args.N + 2, dtype=TYPE_ALIAS)[1:-1]
-    b = cp.sin(cp.pi * grid)
+        # A = -d^2/dx^2; Au = -d^2u/dx^2
+        A = sparse_diags([off_diag, main_diag, off_diag], offsets=[-1, 0, 1], format="csr")
+        A /= (h ** 2)
+
+        # Grid skips the 0 boundary values
+        # Au = sin(pi * x); b = sin(pi * x); Au = b
+        grid = cp.linspace(0, 1, args.N + 2, dtype=TYPE_ALIAS)[1:-1]
+        b = cp.sin(cp.pi * grid)
 
     # Kernel
-    cp.cuda.Stream.null.synchronize()
-    _ = cg(A, b, rtol=1e-10, maxiter=args.maxiter)
-    cp.cuda.Stream.null.synchronize()
+    with nvtx.annotate("CG: Warm-Up Kernel"):
+        cp.cuda.Stream.null.synchronize()
+        _ = cg(A, b, rtol=1e-10, maxiter=1)
+        cp.cuda.Stream.null.synchronize()
 
     start = cp.cuda.Event()
     end = cp.cuda.Event()
@@ -181,7 +189,8 @@ def cupy_conjugate_gradient(args, kernel_start_event):
     kernel_start_event.set()
     start.record()
 
-    u, info = cg(A, b, rtol=1e-10, maxiter=args.maxiter)
+    with nvtx.annotate("CG: Main Kernel"):
+        u, info = cg(A, b, rtol=1e-10, maxiter=args.maxiter)
     
     end.record()
     end.synchronize()
@@ -212,7 +221,7 @@ def cupy_dcs(args, kernel_start_event):
     print(f"Grid size            :    [{args.grid_size}, {args.grid_size}, {args.grid_size}]")
     print(f"Number of particles  :    {args.particle_count:,}")
 
-    check_memory_usage_(args.particle_count*4)
+    # check_memory_usage_(args.particle_count*4)
 
     def kernel(atoms, chunk=1 << 16, k_e=K_E):
         nx = ny = nz = args.grid_size
@@ -246,17 +255,22 @@ def cupy_dcs(args, kernel_start_event):
 
     rng = np.random.default_rng(42)
 
-    #* this might cause host errors (not enough RAM)
-    atoms = np.empty((args.particle_count, 4), dtype=np.float32)
-    atoms[:, :3] = rng.integers(0, args.grid_size, size=(args.particle_count, 3), endpoint=True)
-    atoms[:, 3] = rng.uniform(-5e-6, 5e-6, size=args.particle_count)
-    
-    d_atoms = cp.asarray(atoms)
+    #? This might cause host errors (not enough RAM)
+    #* Since this is host, it uses numpy float32 instead of cupy float32
+    #TODO This annotation needs fixing:
+    #! change RNG to Philox, use device RNG
+    with nvtx.annotate("DCS: Value Init"):
+        atoms = np.empty((args.particle_count, 4), dtype=np.float32)
+        atoms[:, :3] = rng.integers(0, args.grid_size, size=(args.particle_count, 3), endpoint=True, dtype=INTEGER_TYPE)
+        atoms[:, 3] = rng.uniform(np.float32(-5e-6), np.float32(5e-6), size=args.particle_count)
+        
+        d_atoms = cp.asarray(atoms)
 
     # Kernel
-    cp.cuda.Stream.null.synchronize()
-    _ = kernel(d_atoms)
-    cp.cuda.Stream.null.synchronize()
+    with nvtx.annotate("DCS: Warm-Up Kernel"):
+        cp.cuda.Stream.null.synchronize()
+        _ = kernel(d_atoms)
+        cp.cuda.Stream.null.synchronize()
     
     start = cp.cuda.Event()
     end = cp.cuda.Event()
@@ -264,7 +278,8 @@ def cupy_dcs(args, kernel_start_event):
     kernel_start_event.set()
     start.record()
 
-    q = kernel(d_atoms)
+    with nvtx.annotate("DCS: Main Kernel"):
+        q = kernel(d_atoms)
 
     end.record()
     end.synchronize()
@@ -290,8 +305,8 @@ def cupy_spectral(args, kernel_start_event):
 
     print(f"\nGrid size:    [{args.grid_size}, {args.grid_size}, {args.grid_size}]")
 
-    array_size = (args.N*3) + (args.N**2 * 4)
-    check_memory_usage_(array_size)
+    # array_size = (args.N*3) + (args.N**2 * 4)
+    # check_memory_usage_(array_size)
 
     def kernel(u0, k_squared, num_steps, alpha, dt):
         u_hat = dctn(u0)
@@ -303,27 +318,29 @@ def cupy_spectral(args, kernel_start_event):
         u_final = idctn(u_hat).real
         return u_final
 
-    u0, dx, num_steps = init_heat_equation_(args, stability=False)
-    dz = dy = dx
-    N = u0.shape[0]
+    with nvtx.annotate("Spectral: Value Init"):
+        u0, dx, num_steps = init_heat_equation_(args, stability=False)
+        dz = dy = dx
+        N = u0.shape[0]
 
-    # Frequency grid
-    kx = cp.pi * cp.arange(N) / N
-    ky = cp.pi * cp.arange(N) / N
-    kz = cp.pi * cp.arange(N) / N
-    KX, KY, KZ = cp.meshgrid(kx, ky, kz)
-    
-    # Eigenvalues for Neumann BC
-    k_squared = (
-        2 * (cp.cos(KX) - 1) / dx**2 +
-        2 * (cp.cos(KY) - 1) / dy**2 +
-        2 * (cp.cos(KZ) - 1) / dz**2
-    )
+        # Frequency grid
+        kx = cp.pi * cp.arange(N, dtype=TYPE_ALIAS) / N
+        ky = cp.pi * cp.arange(N, dtype=TYPE_ALIAS) / N
+        kz = cp.pi * cp.arange(N, dtype=TYPE_ALIAS) / N
+        KX, KY, KZ = cp.meshgrid(kx, ky, kz, dtype=TYPE_ALIAS)
+        
+        # Eigenvalues for Neumann BC
+        k_squared = (
+            2 * (cp.cos(KX) - 1) / dx**2 +
+            2 * (cp.cos(KY) - 1) / dy**2 +
+            2 * (cp.cos(KZ) - 1) / dz**2
+        )
 
     # Kernel
-    cp.cuda.Stream.null.synchronize()
-    _ = kernel(u0, k_squared, 1, ALPHA, DT)
-    cp.cuda.Stream.null.synchronize()
+    with nvtx.annotate("Spectral: Warm-Up Kernel"):
+        cp.cuda.Stream.null.synchronize()
+        _ = kernel(u0, k_squared, 1, ALPHA, DT)
+        cp.cuda.Stream.null.synchronize()
 
     start = cp.cuda.Event()
     end = cp.cuda.Event()
@@ -331,7 +348,8 @@ def cupy_spectral(args, kernel_start_event):
     kernel_start_event.set()
     start.record()
 
-    u_final = kernel(u0, k_squared, num_steps, ALPHA, DT)
+    with nvtx.annotate("Spectral: Main Kernel"):
+        u_final = kernel(u0, k_squared, num_steps, ALPHA, DT)
 
     end.record()
     end.synchronize()
@@ -358,7 +376,7 @@ def cupy_spmv(args, kernel_start_event):
     print(f"Grid size             :    [{args.grid_size}, {args.grid_size}, {args.grid_size}]")
     print(f"Number of iterations  :    {args.iterations:,}")
 
-    check_memory_usage_(args.grid_size**6 + args.grid_size**3)
+    # check_memory_usage_(args.grid_size**6 + args.grid_size**3)
 
     def init_sparse_laplacian_array_(n, dx):
         lower  = cp.ones(n-1, dtype=TYPE_ALIAS)
@@ -386,18 +404,21 @@ def cupy_spmv(args, kernel_start_event):
 
         return u
 
-    u0, dx, num_steps = init_heat_equation_(args)
-    L = init_sparse_laplacian_array_(args.grid_size, dx)
-    N = u0.size
-    
-    u0 = cp.ravel(u0)
-    I = identity(N, format="csr", dtype=TYPE_ALIAS)
-    M = I + (ALPHA * DT * L)
+    with nvtx.annotate("SpMV: Value Init"):
+        u0, dx, num_steps = init_heat_equation_(args)
+        L = init_sparse_laplacian_array_(args.grid_size, dx)
+        N = u0.size
+
+    with nvtx.annotate("SpMV: Matrix-Vector Calculations"):
+        u0 = cp.ravel(u0)
+        I = identity(N, format="csr", dtype=TYPE_ALIAS)
+        M = I + (ALPHA * DT * L)
     
     # Kernel
-    cp.cuda.Stream.null.synchronize()
-    _ = kernel(u0, M, 1)
-    cp.cuda.Stream.null.synchronize()
+    with nvtx.annotate("SpMV: Warm-Up Kernel"):
+        cp.cuda.Stream.null.synchronize()
+        _ = kernel(u0, M, 1)
+        cp.cuda.Stream.null.synchronize()
 
     start = cp.cuda.Event()
     end = cp.cuda.Event()
@@ -405,7 +426,8 @@ def cupy_spmv(args, kernel_start_event):
     kernel_start_event.set()
     start.record()
 
-    y = kernel(u0, M, num_steps)
+    with nvtx.annotate("SpMV: Main Kernel"):
+        y = kernel(u0, M, num_steps)
 
     end.record()
     end.synchronize()
@@ -437,13 +459,15 @@ def cupy_stencil(args, kernel_start_event):
 
         return u
 
-    u0, dx, num_steps = init_heat_equation_(args)
-    kernel_array = init_laplacian_array_(dx)
+    with nvtx.annotate("Stencil: Value Init"):
+        u0, dx, num_steps = init_heat_equation_(args)
+        kernel_array = init_laplacian_array_(dx)
 
     # Kernel
-    cp.cuda.Stream.null.synchronize()
-    _ = kernel(u0, kernel_array, 1, ALPHA, DT)
-    cp.cuda.Stream.null.synchronize()
+    with nvtx.annotate("Stencil: Warm-Up Kernel"):
+        cp.cuda.Stream.null.synchronize()
+        _ = kernel(u0, kernel_array, 1, ALPHA, DT)
+        cp.cuda.Stream.null.synchronize()
 
     start = cp.cuda.Event()
     end = cp.cuda.Event()
@@ -451,7 +475,8 @@ def cupy_stencil(args, kernel_start_event):
     kernel_start_event.set()
     start.record()
 
-    u = kernel(u0, kernel_array, num_steps, ALPHA, DT)
+    with nvtx.annotate("Stencil: Main Kernel"):
+        u = kernel(u0, kernel_array, num_steps, ALPHA, DT)
 
     end.record()
     end.synchronize()
