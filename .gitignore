@@ -5,3 +5,6 @@ ThesisLog.md
 venv/
 temp/
 build/
+*.nsys-rep
+*.sqlite
+*.log
