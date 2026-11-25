@@ -41,6 +41,76 @@ void spmv(sycl::queue& q, std::size_t N, const CSR& A, const float* x, float* y)
         y[i] = sum;
     });
 }
+
+float dot(sycl::queue& q, std::size_t N, const float* A, const float* B) {
+    float* device_output = sycl::malloc_device<float>(1, q);
+
+    q.submit([&](sycl::handler& h) {
+        auto reduction = sycl::reduction(
+            device_output, sycl::plus<float>(),
+            sycl::property::reduction::initialize_to_identity{}
+        );
+
+        h.parallel_for(
+            sycl::range<1>(N), reduction,
+            [=](sycl::id<1> id, auto& reducer) {
+                reducer += A[id] * B[id];
+            }
+        );
+    });
+
+    float output;
+    q.memcpy(&output, device_output, sizeof(float)).wait();
+
+    sycl::free(device_output, q);
+    return output;
+}
+
+void axpy(sycl::queue& q, std::size_t N, float alpha, const float* X, float* y) {
+    q.parallel_for(sycl::range<1>(N), [=](sycl::id<1> id) {
+        y[id] += alpha * X[id];
+    });
+}
+
+int cg(sycl::queue& q, int maxiter) {
+    int it = 0;
+
+    for (; it < maxiter; ++it) {
+            spmv(q, A, p, Ap);
+            axpy(q, n, alpha, p, x); // x += alpha * p
+            axpy(q, n, -alpha, Ap, r); // r -= alpha * Ap
+    }
+
+    /*
+    r = b - A@x
+    if prec is not None:
+        u = prec@r
+    else:
+        u = r.copy()
+    p = u.copy()
+    ru = (r.T) @ u
+
+    for k in range(maxit):
+        res = rel_residual_norm_iter(A, x, b)
+        rel_res_vec.append(res)
+        if res < tol:
+            break
+
+        Ap = A@p
+        alpha = ru / (p.T @ Ap)
+        x = x + alpha*p
+        r = r - alpha*Ap
+
+        u = prec@r if prec is not None else r.copy()
+        ru_new = (r.T) @ u
+        beta = ru_new / ru
+        p = u + beta*p
+        
+        ru = ru_new
+        iterations += 1
+    */
+}
+
 template <typename Kernel>
 Timing timed_kernel(sycl::range<3> range, Kernel kernel) {
     sycl::queue q{
