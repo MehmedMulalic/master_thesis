@@ -1,6 +1,6 @@
 import cupy as cp
 import numpy as np
-import StabilityException, ConvergenceException
+from exceptions import StabilityException, ConvergenceException
 
 TYPE_ALIAS = cp.float32
 

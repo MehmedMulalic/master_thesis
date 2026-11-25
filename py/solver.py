@@ -3,6 +3,7 @@ from queue import Empty
 import multiprocessing as mp
 import pynvml
 import time
+from exceptions import StabilityException, ConvergenceException
 
 #!ISSUE: validation obfuscates results; samples are procuring during validation.
 #! This means that there are empty values at the end of the stopwatch.
