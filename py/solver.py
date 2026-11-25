@@ -285,10 +285,8 @@ def print_validate_(message):
 
 if __name__ == "__main__":
     args = parse_args()
+    mp.set_start_method("spawn")
 
-    print(f"Framework  :    {FRAMEWORKS[args.framework]}")
-    print(f"Workload   :    {NUM_METHOD[args.workload]}")
-    print()
 
     queue = mp.Queue()
     stop_event = mp.Event()
